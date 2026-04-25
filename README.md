@@ -1,98 +1,144 @@
 # VeriLearn
 
-VeriLearn 是一个面向自学场景的验证式学习系统后端项目。
+VeriLearn is a backend project for a verification-based self-learning system.
 
-它关注的重点不是“如何提供更多学习资料”，而是“如何让学习过程形成可验证、可记录、可调整的闭环”。
-项目当前以 Java 后端工程为核心，先完成目标设置、数据持久化、统一接口规范和后续任务编排所需的基础能力。
+It focuses on one core question: how to turn learning into a process that can be planned, verified, recorded, and adjusted by the system, instead of only serving content.
 
-## 项目介绍
+This repository currently contains the backend MVP built with Spring Boot, centered on goal setup, persistence, API conventions, and the core data flow required for future task generation and validation.
 
-很多学习产品擅长提供内容，但不擅长回答几个关键问题：
+## Table of Contents
 
-- 用户今天具体该学什么
-- 学完之后是否真的掌握
-- 当前结果应该如何影响下一步安排
+- [Background](#background)
+- [Project Status](#project-status)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Repository Structure](#repository-structure)
+- [Quick Start](#quick-start)
+- [API Overview](#api-overview)
+- [Testing](#testing)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
-VeriLearn 想做的是一套支持这类闭环的后端系统。当前版本先聚焦最小可运行能力：
+## Background
 
-- 学习目标设置
-- 用户与目标数据持久化
-- 知识点结构的数据库骨架
-- 统一响应与异常处理
-- 可验证的接口与数据库链路
+Many learning products are good at providing resources, but weak at answering questions like:
 
-## 核心流程
+- What should the learner study today?
+- Has the learner really understood the content?
+- How should the next step change based on the result?
 
-从产品视角看，VeriLearn 的目标流程如下：
-
-```text
-学习目标设置
-    -> 知识点拆分
-    -> 每日任务生成
-    -> 学习验证
-    -> 结果分流
-    -> 后续安排调整
-```
-
-当前代码已经落地的是前半段能力：
+VeriLearn is intended to support a workflow like this:
 
 ```text
-提交学习目标
-    -> 查找或创建学习用户
-    -> 创建或更新学习目标
-    -> 写入 MySQL
-    -> 返回统一 JSON 响应
+Goal setup
+  -> knowledge breakdown
+  -> daily task generation
+  -> learning validation
+  -> result diversion
+  -> next-step adjustment
 ```
 
-## 技术栈
+The current version implements the backend foundation for that workflow, starting from the earliest stable part of the system:
 
-- `Java 17`
-- `Spring Boot 3.5.13`
-- `Maven 3.9.x`
-- `MySQL 8.x`
-- `MyBatis-Plus 3.5.15`
-- `JUnit 5`
+```text
+Submit learning goal
+  -> find or create learner
+  -> create or update goal
+  -> persist into MySQL
+  -> return unified JSON response
+```
 
-当前技术选型原则很明确：
+## Project Status
 
-- 保持单体工程简单可控
-- 先完成后端闭环，再逐步扩展 AI、任务调度和第三方接入
-- 让代码结构足够清晰，便于学习、演示和后续迭代
+This project is in active MVP development.
 
-## 当前功能
+What is already implemented:
 
-当前仓库已经具备这些基础能力：
+- Spring Boot backend scaffold
+- unified API response model
+- global exception handling
+- MySQL integration
+- core table schema for learner, goal, and knowledge node
+- goal creation and update API
+- automated tests for controller and persistence paths
+
+What is planned next:
+
+- knowledge tree generation
+- daily task generation
+- learning validation flow
+- progress query
+- Feishu integration
+
+## Features
+
+Current backend capabilities include:
 
 - `GET /ping`
-  用于验证服务启动、接口通路和 Spring MVC 是否正常
+  - health check endpoint for service and HTTP chain verification
 
-- 统一响应结构
-  普通接口统一返回 `code / message / data`
+- Unified API response
+  - standard `code / message / data` response format
 
-- 全局异常处理
-  已具备最小异常兜底能力
+- Global exception handling
+  - centralized error response for controller layer exceptions
 
 - `POST /api/goals`
-  支持按 `feishuOpenId` 创建或更新学习目标
+  - create or update a learning goal by `feishuOpenId`
 
-- MySQL 数据接入
-  已完成真实数据库连接与最小读写验证
+- MySQL persistence
+  - real database connectivity with tested read/write flow
 
-- 核心表骨架
-  当前已建立：
+- Core schema
   - `learner_user`
   - `learning_goal`
   - `knowledge_node`
 
-- 自动化测试
-  当前已覆盖：
-  - 统一响应与异常处理
-  - 学习目标创建与更新
-  - 数据库连接与读写冒烟测试
+## Architecture
 
-## 项目结构
+The project currently follows a standard layered monolith structure:
 
-仓库当前包含一个 Spring Boot 单体工程：
+```text
+Controller
+  -> Service
+  -> Mapper
+  -> MySQL
+```
+
+Example for the current goal flow:
+
+```text
+GoalController
+  -> GoalServiceImpl
+  -> LearnerUserMapper / LearningGoalMapper
+  -> learner_user / learning_goal
+```
+
+This keeps responsibilities clear:
+
+- Controller handles HTTP request and response
+- Service handles business rules and flow
+- Mapper handles persistence
+- MySQL stores domain data
+
+## Tech Stack
+
+- Java 17
+- Spring Boot 3.5.13
+- Maven 3.9.x
+- MySQL 8.x
+- MyBatis-Plus 3.5.15
+- JUnit 5
+
+Selection principles:
+
+- keep the project simple enough for a single developer MVP
+- preserve clear structure for learning and interview presentation
+- support future extension without introducing heavy infrastructure too early
+
+## Repository Structure
 
 ```text
 VeriLearn/
@@ -119,121 +165,75 @@ VeriLearn/
       └─ test/
 ```
 
-各包当前职责如下：
+Package responsibilities:
 
-- `common`
-  通用能力，如统一返回结构、全局异常处理、健康检查接口
+- `common`: shared response model, exception handling, health endpoint
+- `user`: learner domain
+- `goal`: learning goal domain
+- `knowledge`: knowledge structure domain
+- `task`: daily task domain placeholder
+- `validation`: validation domain placeholder
+- `progress`: progress query domain placeholder
+- `ai`: model integration placeholder
+- `infra`: infrastructure and third-party integration placeholder
 
-- `user`
-  学习用户基础信息
+## Quick Start
 
-- `goal`
-  学习目标设置与目标相关业务
+### Prerequisites
 
-- `knowledge`
-  知识点结构与后续知识树能力预留
+- JDK 17
+- Maven 3.9.x
+- MySQL 8.x
 
-- `task`
-  每日任务生成相关能力预留
+### 1. Create database
 
-- `validation`
-  学习验证与验证结果处理能力预留
-
-- `progress`
-  学习进度查询能力预留
-
-- `ai`
-  模型调用与结构化输出能力预留
-
-- `infra`
-  第三方接入、配置与基础设施能力预留
-
-## 模块关系
-
-当前后端按典型单体工程方式组织：
-
-```text
-Controller
-    -> Service
-    -> Mapper
-    -> MySQL
+```sql
+CREATE DATABASE verilearn DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-以学习目标功能为例：
+### 2. Configure local database
 
-```text
-GoalController
-    -> GoalServiceImpl
-    -> LearnerUserMapper / LearningGoalMapper
-    -> learner_user / learning_goal
+Current local development configuration expects:
+
+- database: `verilearn`
+- username: `root`
+- password: `root`
+
+Main configuration file:
+
+- `verilearn/src/main/resources/application.yml`
+
+### 3. Run the application
+
+```bash
+cd verilearn
+mvn spring-boot:run
 ```
 
-这套结构的目的很明确：
+### 4. Run tests
 
-- Controller 负责接收请求与返回响应
-- Service 负责业务规则与流程控制
-- Mapper 负责数据访问
-- MySQL 负责持久化
+```bash
+cd verilearn
+mvn test
+```
 
-## 数据模型概览
+## API Overview
 
-当前阶段已经落地的核心表如下。
-
-### `learner_user`
-
-表示学习用户。
-
-关键字段：
-
-- `id`
-- `feishu_open_id`
-- `created_at`
-- `updated_at`
-
-### `learning_goal`
-
-表示用户当前的学习目标。
-
-关键字段：
-
-- `id`
-- `user_id`
-- `topic`
-- `target_level`
-- `daily_minutes`
-- `status`
-
-### `knowledge_node`
-
-表示知识点结构中的节点。
-
-关键字段：
-
-- `id`
-- `user_id`
-- `goal_id`
-- `parent_id`
-- `node_name`
-- `sequence_no`
-- `status`
-
-## 核心接口
-
-### 健康检查
+### Health Check
 
 `GET /ping`
 
-返回：
+Response:
 
 ```text
 VeriLearn API is running
 ```
 
-### 学习目标设置
+### Create or Update Goal
 
 `POST /api/goals`
 
-请求示例：
+Request example:
 
 ```json
 {
@@ -244,7 +244,7 @@ VeriLearn API is running
 }
 ```
 
-返回示例：
+Response example:
 
 ```json
 {
@@ -262,51 +262,41 @@ VeriLearn API is running
 }
 ```
 
-## 测试
+## Testing
 
-当前测试覆盖三类基础能力：
+Current automated tests include:
 
 - `DemoControllerTest`
-  验证统一响应结构与异常处理
+  - verifies unified response and global exception handling
 
 - `GoalControllerTest`
-  验证学习目标的创建与更新链路
+  - verifies goal creation and update flow
 
 - `DatabaseSmokeTest`
-  验证数据库连接、插入与查询链路
+  - verifies database connectivity and basic persistence operations
 
-## 本地运行
+## Roadmap
 
-### 准备数据库
+Planned directions for the next iterations:
 
-先创建本地数据库：
+- generate structured knowledge nodes for a goal
+- support daily task generation
+- support validation question flow
+- support progress query APIs
+- integrate with Feishu bot callbacks
 
-```sql
-CREATE DATABASE verilearn DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
+## Contributing
 
-当前本地开发配置使用：
+This repository is still evolving as an MVP.
 
-- 数据库：`verilearn`
-- 用户名：`root`
-- 密码：`root`
+If you want to contribute:
 
-### 启动项目
+1. fork the repository
+2. create a feature branch
+3. keep changes focused and readable
+4. add or update tests when behavior changes
+5. open a pull request with a clear description
 
-进入 `verilearn/` 目录后执行：
+## License
 
-```bash
-mvn spring-boot:run
-```
-
-### 运行测试
-
-```bash
-mvn test
-```
-
-## 说明
-
-- 仓库只保留适合公开同步的工程内容
-- 开发日记与过程性内部记录不进入仓库
-- 当前项目采用“单体工程 + 按业务域分包”的组织方式，而不是 Maven 聚合工程
+No open source license has been added yet.
