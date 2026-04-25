@@ -12,7 +12,9 @@ VeriLearn 是一个面向自学场景的验证式学习系统后端项目。
 
 它关注的核心问题不是“如何提供更多学习资料”，而是“如何让学习过程形成可规划、可验证、可记录、可调整的闭环”。
 
-当前仓库包含基于 Spring Boot 的后端 MVP，重点放在：
+当前仓库包含基于 Spring Boot 的后端 MVP。
+
+你可以把它理解成 VeriLearn 的第一版（V1），重点放在：
 
 - 学习目标设置
 - 数据持久化
@@ -51,6 +53,7 @@ VeriLearn 期望支撑这样的流程：
 ### 项目状态
 
 项目当前处于 MVP 持续开发阶段。
+当前仓库对应的是 VeriLearn 的第一版后端实现，目标不是一次性做完整平台，而是先把最小可运行、可验证、可扩展的核心链路搭起来。
 
 已完成：
 
@@ -62,7 +65,7 @@ VeriLearn 期望支撑这样的流程：
 - 学习目标创建与更新接口
 - 控制层与持久化链路自动化测试
 
-计划中：
+后续开发方向：
 
 - 知识树生成
 - 每日任务生成
@@ -281,6 +284,39 @@ VeriLearn API is running
 - 支持进度查询接口
 - 支持飞书机器人回调接入
 
+### 版本规划
+
+#### V1
+
+当前版本，重点完成：
+
+- 后端工程骨架
+- 学习目标创建与更新
+- 统一响应结构与异常处理
+- MySQL 数据持久化
+- 核心表结构落地
+- 基础自动化测试
+
+#### 后续迭代
+
+计划继续推进：
+
+- `V1.x`
+  - 知识点拆分与知识树保存
+  - 每日任务生成
+  - 学习验证记录
+  - 进度查询接口
+
+- `V2`
+  - 飞书机器人接入
+  - 学习流程消息交互
+  - 任务推送与回调处理
+
+- `V3`
+  - 基于验证结果的分流逻辑
+  - 更完整的学习闭环
+  - 更稳定的任务调度与后续扩展能力
+
 ### 贡献
 
 如果你希望参与：
@@ -305,7 +341,9 @@ VeriLearn is a backend project for a verification-based self-learning system.
 
 Its core focus is not simply delivering more learning content, but turning learning into a process that can be planned, verified, recorded, and adjusted by the system.
 
-This repository currently contains a Spring Boot based backend MVP focused on:
+This repository currently contains a Spring Boot based backend MVP.
+
+It can be understood as the first version (V1) of VeriLearn, focused on:
 
 - learning goal setup
 - persistence
@@ -344,6 +382,7 @@ Submit learning goal
 ### Project Status
 
 The project is currently in active MVP development.
+The current repository represents the first backend version of VeriLearn. The goal is not to build the full platform at once, but to first establish a minimal, runnable, verifiable, and extensible core workflow.
 
 Implemented:
 
@@ -355,7 +394,7 @@ Implemented:
 - goal creation and update API
 - automated tests for controller and persistence paths
 
-Planned:
+Planned next:
 
 - knowledge tree generation
 - daily task generation
@@ -573,6 +612,39 @@ Current automated tests include:
 - support validation question flow
 - support progress query APIs
 - integrate with Feishu bot callbacks
+
+### Version Plan
+
+#### V1
+
+Current version, focused on:
+
+- backend scaffold
+- learning goal creation and update
+- unified API response and exception handling
+- MySQL persistence
+- core schema setup
+- basic automated tests
+
+#### Future Iterations
+
+Planned next stages:
+
+- `V1.x`
+  - knowledge breakdown and persistence
+  - daily task generation
+  - learning validation records
+  - progress query APIs
+
+- `V2`
+  - Feishu bot integration
+  - interactive learning flow messages
+  - task push and callback handling
+
+- `V3`
+  - result-based diversion logic
+  - a more complete learning workflow
+  - more stable scheduling and extension capabilities
 
 ### Contributing
 
