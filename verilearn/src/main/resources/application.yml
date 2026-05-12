@@ -19,11 +19,14 @@ verilearn:
     api-key: ${VERILEARN_AI_API_KEY:}
     model: ${VERILEARN_AI_MODEL:deepseek-chat}
   feishu:
+    base-url: ${VERILEARN_FEISHU_BASE_URL:https://open.feishu.cn/open-apis}
     app-id: ${VERILEARN_FEISHU_APP_ID:}
     app-secret: ${VERILEARN_FEISHU_APP_SECRET:}
     verification-token: ${VERILEARN_FEISHU_VERIFICATION_TOKEN:}
   schedule:
     daily-task-cron: "0 0 8 * * ?"
+  storage:
+    learning-space-root: ${VERILEARN_LEARNING_SPACE_ROOT:${user.dir}/learning-space}
 
 mybatis-plus:
   configuration:

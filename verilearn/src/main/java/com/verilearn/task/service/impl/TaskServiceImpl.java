@@ -318,6 +318,7 @@ public class TaskServiceImpl implements TaskService {
         response.setNodeName(node.getNodeName());
         response.setChapterId(task.getChapterId());
         response.setChapterTitle(chapter == null ? null : chapter.getTitle());
+        applyMaterialLinks(response, chapter);
         response.setTaskDate(task.getTaskDate());
         response.setStepType(task.getStepType());
         response.setStepOrder(task.getStepOrder());
@@ -326,6 +327,36 @@ public class TaskServiceImpl implements TaskService {
         response.setStatus(task.getStatus());
         response.setValidationItems(validationService.initializeValidationItems(task.getId(), node.getId(), node.getNodeName(), task.getStepType()));
         return response;
+    }
+
+    private void applyMaterialLinks(TaskResponse response, LearningChapter chapter) {
+        if (chapter == null) {
+            return;
+        }
+
+        List<ChapterMaterial> materials = chapterMaterialMapper.selectList(
+                new LambdaQueryWrapper<ChapterMaterial>()
+                        .eq(ChapterMaterial::getChapterId, chapter.getId())
+        );
+        if (materials.isEmpty()) {
+            return;
+        }
+
+        materials.stream()
+                .filter(material -> MATERIAL_THEORY_DOC.equals(material.getMaterialType()))
+                .findFirst()
+                .ifPresent(material -> {
+                    response.setTheoryMaterialId(material.getId());
+                    response.setTheoryFilePath(material.getFilePath());
+                });
+
+        materials.stream()
+                .filter(material -> MATERIAL_DEMO_GUIDE.equals(material.getMaterialType()))
+                .findFirst()
+                .ifPresent(material -> {
+                    response.setDemoMaterialId(material.getId());
+                    response.setDemoFilePath(material.getFilePath());
+                });
     }
 
     private record ChapterTaskContext(LearningChapter chapter, ChapterStep step, KnowledgeNode node) {

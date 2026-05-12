@@ -1,6 +1,8 @@
 package com.verilearn.workflow;
 
 import com.verilearn.chapter.JsonPathHelper;
+import com.verilearn.ai.dto.AiDemoEvaluationResult;
+import com.verilearn.ai.service.AiEvaluationService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
@@ -12,12 +14,15 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -39,6 +44,9 @@ class LearnerWorkflowControllerTest {
 
     @Autowired
     private KnowledgeNodeMapper knowledgeNodeMapper;
+
+    @MockBean
+    private AiEvaluationService aiEvaluationService;
 
     @Test
     void shouldSetupLearnerAndCreateDefaultKnowledgeNodes() throws Exception {
@@ -173,5 +181,106 @@ class LearnerWorkflowControllerTest {
                 .andExpect(jsonPath("$.data.progress.totalChapters").value(3))
                 .andExpect(jsonPath("$.data.chapters.length()").value(3))
                 .andExpect(jsonPath("$.data.pendingReviews.length()").value(0));
+    }
+
+    @Test
+    void shouldQueryCurrentContextAfterDemoEvaluation() throws Exception {
+        given(aiEvaluationService.evaluateDemoSubmission(anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .willReturn(mockEvaluationResult());
+
+        String openId = "workflow-context-user";
+
+        mockMvc.perform(post("/api/learners/setup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "feishuOpenId": "workflow-context-user",
+                                  "topic": "Spring Boot",
+                                  "targetLevel": "intern",
+                                  "dailyMinutes": 100,
+                                  "nodeNames": [
+                                    "Spring basics"
+                                  ]
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        String taskResponse = mockMvc.perform(get("/api/learners/{feishuOpenId}/today-task", openId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Long taskId = JsonPathHelper.readLong(taskResponse, "$.data.taskId");
+        Long chapterId = JsonPathHelper.readLong(taskResponse, "$.data.chapterId");
+        Long firstItemId = JsonPathHelper.readLong(taskResponse, "$.data.validationItems[0].itemId");
+        Long secondItemId = JsonPathHelper.readLong(taskResponse, "$.data.validationItems[1].itemId");
+
+        mockMvc.perform(post("/api/tasks/{taskId}/submit", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "submissions": [
+                                    {
+                                      "itemId": %d,
+                                      "submittedAnswer": "understood",
+                                      "correct": true
+                                    },
+                                    {
+                                      "itemId": %d,
+                                      "submittedAnswer": "working example",
+                                      "correct": true
+                                    }
+                                  ]
+                                }
+                                """.formatted(firstItemId, secondItemId)))
+                .andExpect(status().isOk());
+
+        String chapterDetail = mockMvc.perform(get("/api/chapters/{chapterId}", chapterId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Long demoStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[1].id");
+
+        mockMvc.perform(post("/api/chapters/{chapterId}/demo-evaluations", chapterId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "stepId": %d,
+                                  "submissionSummary": "I finished the ping endpoint and can explain why the controller is scanned.",
+                                  "codeSnippet": "@RestController class PingController {}",
+                                  "question": "Why does Spring Boot auto scan this package?"
+                                }
+                                """.formatted(demoStepId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/learners/{feishuOpenId}/current-context", openId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.feishuOpenId").value(openId))
+                .andExpect(jsonPath("$.data.topic").value("Spring Boot"))
+                .andExpect(jsonPath("$.data.todayTask.taskId").value(taskId))
+                .andExpect(jsonPath("$.data.currentChapter.chapterId").value(chapterId))
+                .andExpect(jsonPath("$.data.currentChapter.steps[2].stepType").value("SUBMIT_FEEDBACK"))
+                .andExpect(jsonPath("$.data.evaluationFilePath").value(org.hamcrest.Matchers.endsWith("evaluation-report.md")))
+                .andExpect(jsonPath("$.data.nextStepFilePath").value(org.hamcrest.Matchers.endsWith("next-step.md")));
+    }
+
+    private AiDemoEvaluationResult mockEvaluationResult() {
+        AiDemoEvaluationResult result = new AiDemoEvaluationResult();
+        result.setUnderstandingLevel("HIGH");
+        result.setEvaluationMarkdown("""
+                # Demo evaluation
+                You completed the exercise well.
+                """);
+        result.setNextStepMarkdown("""
+                # Next step
+                Move on to the feedback summary step.
+                """);
+        result.setShouldReview(false);
+        result.setProvider("mock");
+        return result;
     }
 }

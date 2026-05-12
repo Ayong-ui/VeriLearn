@@ -1,6 +1,8 @@
 package com.verilearn.chapter;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.verilearn.ai.dto.AiDemoEvaluationResult;
+import com.verilearn.ai.service.AiEvaluationService;
 import com.verilearn.ai.dto.AiChapterMaterialResult;
 import com.verilearn.ai.service.AiMaterialService;
 import com.verilearn.chapter.entity.LearningChapter;
@@ -53,6 +55,9 @@ class ChapterControllerTest {
     @MockBean
     private AiMaterialService aiMaterialService;
 
+    @MockBean
+    private AiEvaluationService aiEvaluationService;
+
     @Test
     void shouldBootstrapStartAndCompleteChapterWorkflow() throws Exception {
         Long goalId = createGoalWithNodes();
@@ -80,14 +85,22 @@ class ChapterControllerTest {
         String chapterDetail = mockMvc.perform(get("/api/chapters/{chapterId}", chapter.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.materials.length()").value(2))
+                .andExpect(jsonPath("$.data.materials[0].filePath").value(org.hamcrest.Matchers.endsWith(".md")))
                 .andExpect(jsonPath("$.data.steps.length()").value(3))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
+        Long firstMaterialId = JsonPathHelper.readLong(chapterDetail, "$.data.materials[0].id");
         Long firstStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[0].id");
         Long secondStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[1].id");
         Long thirdStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[2].id");
+
+        mockMvc.perform(get("/api/materials/{materialId}/content", firstMaterialId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.materialId").value(firstMaterialId))
+                .andExpect(jsonPath("$.data.filePath").value(org.hamcrest.Matchers.endsWith(".md")))
+                .andExpect(jsonPath("$.data.contentText").value(org.hamcrest.Matchers.containsString("Spring basics")));
 
         mockMvc.perform(post("/api/chapters/{chapterId}/steps/submit", chapter.getId())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -159,9 +172,73 @@ class ChapterControllerTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.summary").value("AI summary for chapter"))
                 .andExpect(jsonPath("$.data.materials[0].status").value("AI_GENERATED"))
+                .andExpect(jsonPath("$.data.materials[0].filePath").value(org.hamcrest.Matchers.endsWith(".md")))
                 .andExpect(jsonPath("$.data.materials[0].contentText").exists())
                 .andExpect(jsonPath("$.data.materials[1].status").value("AI_GENERATED"))
                 .andExpect(jsonPath("$.data.materials[1].contentText").exists());
+    }
+
+    @Test
+    void shouldEvaluateDemoSubmissionAndCreateEvaluationFiles() throws Exception {
+        Long goalId = createGoalWithNodes();
+        mockAiMaterialService();
+        mockAiEvaluationService();
+
+        mockMvc.perform(post("/api/goals/{goalId}/chapters/bootstrap", goalId))
+                .andExpect(status().isOk());
+
+        LearningChapter chapter = learningChapterMapper.selectOne(
+                new LambdaQueryWrapper<LearningChapter>()
+                        .eq(LearningChapter::getGoalId, goalId)
+                        .eq(LearningChapter::getChapterNo, 1)
+                        .last("LIMIT 1")
+        );
+        assertNotNull(chapter);
+
+        mockMvc.perform(post("/api/chapters/{chapterId}/start", chapter.getId()))
+                .andExpect(status().isOk());
+
+        String chapterDetail = mockMvc.perform(get("/api/chapters/{chapterId}", chapter.getId()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Long firstStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[0].id");
+        Long secondStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[1].id");
+
+        mockMvc.perform(post("/api/chapters/{chapterId}/steps/submit", chapter.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "stepId": %d,
+                                  "feedbackNote": "Theory understood.",
+                                  "needsReview": false
+                                }
+                                """.formatted(firstStepId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nextStepId").value(secondStepId))
+                .andExpect(jsonPath("$.data.nextStepType").value("RUN_DEMO"));
+
+        mockMvc.perform(post("/api/chapters/{chapterId}/demo-evaluations", chapter.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "stepId": %d,
+                                  "submissionSummary": "I created the controller and explained the request mapping.",
+                                  "codeSnippet": "@RestController public class DemoController {}",
+                                  "question": "Why is @RestController better here?"
+                                }
+                                """.formatted(secondStepId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.chapterId").value(chapter.getId()))
+                .andExpect(jsonPath("$.data.completedStepId").value(secondStepId))
+                .andExpect(jsonPath("$.data.understandingLevel").value("HIGH"))
+                .andExpect(jsonPath("$.data.evaluationFilePath").value(org.hamcrest.Matchers.endsWith("evaluation-report.md")))
+                .andExpect(jsonPath("$.data.nextStepFilePath").value(org.hamcrest.Matchers.endsWith("next-step.md")))
+                .andExpect(jsonPath("$.data.nextStepType").value("SUBMIT_FEEDBACK"))
+                .andExpect(jsonPath("$.data.chapterStatus").value("IN_PROGRESS"));
     }
 
     private Long createGoalWithNodes() {
@@ -206,5 +283,16 @@ class ChapterControllerTest {
         result.setGeneratedByAi(true);
         result.setProvider("deepseek");
         when(aiMaterialService.generateChapterMaterials(any(), any(), any())).thenReturn(result);
+    }
+
+    private void mockAiEvaluationService() {
+        AiDemoEvaluationResult result = new AiDemoEvaluationResult();
+        result.setUnderstandingLevel("HIGH");
+        result.setEvaluationMarkdown("# Demo 评估报告\n\n这次 Demo 完成度较高。");
+        result.setNextStepMarkdown("# 下一步建议\n\n进入提交反馈步骤，并总结你已经掌握的内容。");
+        result.setShouldReview(false);
+        result.setGeneratedByAi(true);
+        result.setProvider("deepseek");
+        when(aiEvaluationService.evaluateDemoSubmission(any(), any(), any(), any(), any(), any())).thenReturn(result);
     }
 }

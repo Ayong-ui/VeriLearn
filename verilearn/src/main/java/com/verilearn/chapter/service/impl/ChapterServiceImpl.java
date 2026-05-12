@@ -1,10 +1,15 @@
 package com.verilearn.chapter.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.verilearn.ai.dto.AiDemoEvaluationResult;
+import com.verilearn.ai.service.AiEvaluationService;
 import com.verilearn.ai.dto.AiChapterMaterialResult;
 import com.verilearn.ai.service.AiMaterialService;
 import com.verilearn.chapter.dto.ChapterBootstrapResponse;
 import com.verilearn.chapter.dto.ChapterDetailResponse;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationRequest;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
+import com.verilearn.chapter.dto.ChapterMaterialContentResponse;
 import com.verilearn.chapter.dto.ChapterMaterialResponse;
 import com.verilearn.chapter.dto.ChapterStepResponse;
 import com.verilearn.chapter.dto.ChapterStepSubmitRequest;
@@ -19,6 +24,7 @@ import com.verilearn.chapter.mapper.ChapterReviewRecordMapper;
 import com.verilearn.chapter.mapper.ChapterStepMapper;
 import com.verilearn.chapter.mapper.LearningChapterMapper;
 import com.verilearn.chapter.service.ChapterService;
+import com.verilearn.chapter.service.ChapterMaterialStorageService;
 import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
 import com.verilearn.knowledge.entity.KnowledgeNode;
@@ -51,6 +57,8 @@ public class ChapterServiceImpl implements ChapterService {
     private final ChapterMaterialMapper chapterMaterialMapper;
     private final ChapterReviewRecordMapper chapterReviewRecordMapper;
     private final AiMaterialService aiMaterialService;
+    private final AiEvaluationService aiEvaluationService;
+    private final ChapterMaterialStorageService chapterMaterialStorageService;
 
     public ChapterServiceImpl(
             LearningGoalMapper learningGoalMapper,
@@ -59,7 +67,9 @@ public class ChapterServiceImpl implements ChapterService {
             ChapterStepMapper chapterStepMapper,
             ChapterMaterialMapper chapterMaterialMapper,
             ChapterReviewRecordMapper chapterReviewRecordMapper,
-            AiMaterialService aiMaterialService
+            AiMaterialService aiMaterialService,
+            AiEvaluationService aiEvaluationService,
+            ChapterMaterialStorageService chapterMaterialStorageService
     ) {
         this.learningGoalMapper = learningGoalMapper;
         this.knowledgeNodeMapper = knowledgeNodeMapper;
@@ -68,6 +78,8 @@ public class ChapterServiceImpl implements ChapterService {
         this.chapterMaterialMapper = chapterMaterialMapper;
         this.chapterReviewRecordMapper = chapterReviewRecordMapper;
         this.aiMaterialService = aiMaterialService;
+        this.aiEvaluationService = aiEvaluationService;
+        this.chapterMaterialStorageService = chapterMaterialStorageService;
     }
 
     @Override
@@ -101,7 +113,7 @@ public class ChapterServiceImpl implements ChapterService {
             learningChapterMapper.insert(chapter);
 
             createDefaultSteps(chapter, node.getNodeName(), now);
-            createDefaultMaterials(chapter, node.getNodeName(), now);
+            createDefaultMaterials(goal.getTopic(), chapter, node.getNodeName(), now);
             createReviewRecord(chapter.getId(), now);
         }
 
@@ -273,8 +285,8 @@ public class ChapterServiceImpl implements ChapterService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        updateMaterial(materials, "THEORY_DOC", materialResult.getTheoryContent(), materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY", now);
-        updateMaterial(materials, "DEMO_GUIDE", materialResult.getDemoGuideContent(), materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY", now);
+        updateMaterial(goal.getTopic(), chapter, materials, "THEORY_DOC", materialResult.getTheoryContent(), materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY", now);
+        updateMaterial(goal.getTopic(), chapter, materials, "DEMO_GUIDE", materialResult.getDemoGuideContent(), materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY", now);
 
         if (materialResult.getSummary() != null && !materialResult.getSummary().isBlank()) {
             chapter.setSummary(materialResult.getSummary());
@@ -283,6 +295,115 @@ public class ChapterServiceImpl implements ChapterService {
         }
 
         return toDetailResponse(getChapterOrThrow(chapterId));
+    }
+
+    @Override
+    public ChapterMaterialContentResponse getMaterialContent(Long materialId) {
+        ChapterMaterial material = chapterMaterialMapper.selectById(materialId);
+        if (material == null) {
+            throw new IllegalArgumentException("chapter material not found");
+        }
+
+        ChapterMaterialContentResponse response = new ChapterMaterialContentResponse();
+        response.setMaterialId(material.getId());
+        response.setMaterialType(material.getMaterialType());
+        response.setFilePath(material.getFilePath());
+        response.setContentText(chapterMaterialStorageService.readMaterialContent(material.getFilePath(), material.getContentText()));
+        response.setStatus(material.getStatus());
+        return response;
+    }
+
+    @Override
+    @Transactional
+    public ChapterDemoEvaluationResponse evaluateDemoSubmission(Long chapterId, ChapterDemoEvaluationRequest request) {
+        LearningChapter chapter = getChapterOrThrow(chapterId);
+        LearningGoal goal = getGoalOrThrow(chapter.getGoalId());
+        ChapterStep step = chapterStepMapper.selectById(request.getStepId());
+        if (step == null || !chapterId.equals(step.getChapterId())) {
+            throw new IllegalArgumentException("chapter step not found");
+        }
+        if (!"RUN_DEMO".equals(step.getStepType())) {
+            throw new IllegalArgumentException("chapter step is not a demo step");
+        }
+        if (!STEP_IN_PROGRESS.equals(step.getStatus())) {
+            throw new IllegalArgumentException("chapter demo step is not in progress");
+        }
+
+        ChapterMaterial demoMaterial = findMaterial(chapterId, "DEMO_GUIDE");
+        String demoGuide = demoMaterial == null ? step.getInstructionText() : chapterMaterialStorageService.readMaterialContent(demoMaterial.getFilePath(), demoMaterial.getContentText());
+        AiDemoEvaluationResult evaluation = aiEvaluationService.evaluateDemoSubmission(
+                goal.getTopic(),
+                chapter.getTitle(),
+                demoGuide,
+                request.getSubmissionSummary(),
+                request.getCodeSnippet(),
+                request.getQuestion()
+        );
+
+        LocalDateTime now = LocalDateTime.now();
+        step.setStatus(STEP_COMPLETED);
+        step.setFeedbackNote(request.getSubmissionSummary());
+        step.setUpdatedAt(now);
+        chapterStepMapper.updateById(step);
+
+        ChapterMaterial evaluationMaterial = upsertMaterial(
+                goal.getTopic(),
+                chapter,
+                "EVALUATION_REPORT",
+                evaluation.getEvaluationMarkdown(),
+                evaluation.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
+                now
+        );
+        ChapterMaterial nextStepMaterial = upsertMaterial(
+                goal.getTopic(),
+                chapter,
+                "NEXT_STEP_NOTE",
+                evaluation.getNextStepMarkdown(),
+                evaluation.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
+                now
+        );
+
+        if (evaluation.isShouldReview()) {
+            updateReviewStatus(chapterId, REVIEW_PENDING, null, now);
+        }
+
+        ChapterStep nextStep = listSteps(chapterId).stream()
+                .filter(item -> STEP_NOT_STARTED.equals(item.getStatus()))
+                .min(Comparator.comparing(ChapterStep::getStepOrder))
+                .orElse(null);
+
+        ChapterDemoEvaluationResponse response = new ChapterDemoEvaluationResponse();
+        response.setChapterId(chapterId);
+        response.setCompletedStepId(step.getId());
+        response.setUnderstandingLevel(evaluation.getUnderstandingLevel());
+        response.setEvaluationMaterialId(evaluationMaterial.getId());
+        response.setEvaluationFilePath(evaluationMaterial.getFilePath());
+        response.setNextStepMaterialId(nextStepMaterial.getId());
+        response.setNextStepFilePath(nextStepMaterial.getFilePath());
+
+        if (nextStep != null) {
+            nextStep.setStatus(STEP_IN_PROGRESS);
+            nextStep.setUpdatedAt(now);
+            chapterStepMapper.updateById(nextStep);
+
+            chapter.setStatus(CHAPTER_IN_PROGRESS);
+            chapter.setUpdatedAt(now);
+            learningChapterMapper.updateById(chapter);
+
+            response.setNextStepId(nextStep.getId());
+            response.setNextStepType(nextStep.getStepType());
+            response.setChapterStatus(CHAPTER_IN_PROGRESS);
+            response.setReviewStatus(getReviewStatus(chapterId));
+            return response;
+        }
+
+        chapter.setStatus(CHAPTER_COMPLETED);
+        chapter.setUpdatedAt(now);
+        learningChapterMapper.updateById(chapter);
+        updateReviewStatus(chapterId, REVIEW_PENDING, null, now);
+        response.setChapterStatus(CHAPTER_COMPLETED);
+        response.setReviewStatus(REVIEW_PENDING);
+        return response;
     }
 
     private void createDefaultSteps(LearningChapter chapter, String chapterTitle, LocalDateTime now) {
@@ -294,11 +415,26 @@ public class ChapterServiceImpl implements ChapterService {
                 "Describe what you understood, what was unclear, and whether review is needed.", now);
     }
 
-    private void createDefaultMaterials(LearningChapter chapter, String chapterTitle, LocalDateTime now) {
-        insertMaterial(chapter.getId(), "THEORY_DOC", null,
-                "# " + chapterTitle + "\n\nExplain what this chapter is, why it matters, and the key idea to remember.", now);
-        insertMaterial(chapter.getId(), "DEMO_GUIDE", null,
-                "# Demo for " + chapterTitle + "\n\n1. Read the theory.\n2. Run the demo.\n3. Compare the output.\n4. Summarize the result.", now);
+    private void createDefaultMaterials(String goalTopic, LearningChapter chapter, String chapterTitle, LocalDateTime now) {
+        String theoryContent = "# " + chapterTitle + "\n\nExplain what this chapter is, why it matters, and the key idea to remember.";
+        String theoryPath = chapterMaterialStorageService.createOrUpdateMaterialFile(
+                goalTopic,
+                chapter.getChapterNo(),
+                chapter.getTitle(),
+                "THEORY_DOC",
+                theoryContent
+        );
+        insertMaterial(chapter.getId(), "THEORY_DOC", theoryPath, theoryContent, now);
+
+        String demoContent = "# Demo for " + chapterTitle + "\n\n1. Read the theory.\n2. Run the demo.\n3. Compare the output.\n4. Summarize the result.";
+        String demoPath = chapterMaterialStorageService.createOrUpdateMaterialFile(
+                goalTopic,
+                chapter.getChapterNo(),
+                chapter.getTitle(),
+                "DEMO_GUIDE",
+                demoContent
+        );
+        insertMaterial(chapter.getId(), "DEMO_GUIDE", demoPath, demoContent, now);
     }
 
     private void createReviewRecord(Long chapterId, LocalDateTime now) {
@@ -335,7 +471,15 @@ public class ChapterServiceImpl implements ChapterService {
         chapterMaterialMapper.insert(material);
     }
 
-    private void updateMaterial(List<ChapterMaterial> materials, String materialType, String contentText, String status, LocalDateTime now) {
+    private void updateMaterial(
+            String goalTopic,
+            LearningChapter chapter,
+            List<ChapterMaterial> materials,
+            String materialType,
+            String contentText,
+            String status,
+            LocalDateTime now
+    ) {
         ChapterMaterial material = materials.stream()
                 .filter(item -> materialType.equals(item.getMaterialType()))
                 .findFirst()
@@ -343,10 +487,71 @@ public class ChapterServiceImpl implements ChapterService {
         if (material == null) {
             return;
         }
+        String filePath = chapterMaterialStorageService.createOrUpdateMaterialFile(
+                goalTopic,
+                chapter.getChapterNo(),
+                chapter.getTitle(),
+                materialType,
+                contentText
+        );
+        material.setFilePath(filePath);
         material.setContentText(contentText);
         material.setStatus(status);
         material.setUpdatedAt(now);
         chapterMaterialMapper.updateById(material);
+    }
+
+    private ChapterMaterial upsertMaterial(
+            String goalTopic,
+            LearningChapter chapter,
+            String materialType,
+            String contentText,
+            String status,
+            LocalDateTime now
+    ) {
+        ChapterMaterial material = findMaterial(chapter.getId(), materialType);
+        if (material == null) {
+            String filePath = chapterMaterialStorageService.createOrUpdateMaterialFile(
+                    goalTopic,
+                    chapter.getChapterNo(),
+                    chapter.getTitle(),
+                    materialType,
+                    contentText
+            );
+            ChapterMaterial newMaterial = new ChapterMaterial();
+            newMaterial.setChapterId(chapter.getId());
+            newMaterial.setMaterialType(materialType);
+            newMaterial.setFilePath(filePath);
+            newMaterial.setContentText(contentText);
+            newMaterial.setStatus(status);
+            newMaterial.setCreatedAt(now);
+            newMaterial.setUpdatedAt(now);
+            chapterMaterialMapper.insert(newMaterial);
+            return newMaterial;
+        }
+
+        String filePath = chapterMaterialStorageService.createOrUpdateMaterialFile(
+                goalTopic,
+                chapter.getChapterNo(),
+                chapter.getTitle(),
+                materialType,
+                contentText
+        );
+        material.setFilePath(filePath);
+        material.setContentText(contentText);
+        material.setStatus(status);
+        material.setUpdatedAt(now);
+        chapterMaterialMapper.updateById(material);
+        return material;
+    }
+
+    private ChapterMaterial findMaterial(Long chapterId, String materialType) {
+        return chapterMaterialMapper.selectOne(
+                new LambdaQueryWrapper<ChapterMaterial>()
+                        .eq(ChapterMaterial::getChapterId, chapterId)
+                        .eq(ChapterMaterial::getMaterialType, materialType)
+                        .last("LIMIT 1")
+        );
     }
 
     private void deleteExistingChapters(Long goalId) {
@@ -469,7 +674,7 @@ public class ChapterServiceImpl implements ChapterService {
             response.setId(material.getId());
             response.setMaterialType(material.getMaterialType());
             response.setFilePath(material.getFilePath());
-            response.setContentText(material.getContentText());
+            response.setContentText(chapterMaterialStorageService.readMaterialContent(material.getFilePath(), material.getContentText()));
             response.setStatus(material.getStatus());
             responses.add(response);
         }

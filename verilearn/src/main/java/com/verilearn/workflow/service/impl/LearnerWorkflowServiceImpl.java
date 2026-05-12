@@ -2,6 +2,8 @@ package com.verilearn.workflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.verilearn.chapter.dto.ChapterBootstrapResponse;
+import com.verilearn.chapter.dto.ChapterDetailResponse;
+import com.verilearn.chapter.dto.ChapterMaterialResponse;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
 import com.verilearn.chapter.service.ChapterService;
 import com.verilearn.goal.dto.GoalResponse;
@@ -22,6 +24,8 @@ import com.verilearn.task.service.TaskService;
 import com.verilearn.user.entity.LearnerUser;
 import com.verilearn.user.mapper.LearnerUserMapper;
 import com.verilearn.workflow.dto.LearnerSetupRequest;
+import com.verilearn.workflow.dto.LearnerCurrentContextResponse;
+import com.verilearn.workflow.dto.LearnerMaterialReference;
 import com.verilearn.workflow.dto.LearnerDashboardResponse;
 import com.verilearn.workflow.dto.LearnerSetupResponse;
 import com.verilearn.workflow.service.LearnerWorkflowService;
@@ -137,6 +141,34 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         return response;
     }
 
+    @Override
+    public LearnerCurrentContextResponse getCurrentContext(String feishuOpenId) {
+        LearnerUser learnerUser = getLearnerByOpenId(feishuOpenId);
+        LearningGoal goal = getLatestGoalByOpenId(feishuOpenId);
+        TaskResponse todayTask = taskService.findTaskByUserAndDate(learnerUser.getId(), LocalDate.now());
+        ChapterDetailResponse currentChapter = resolveCurrentChapter(goal.getId(), todayTask);
+        LearnerMaterialReference evaluationMaterial = extractMaterial(currentChapter, "EVALUATION_REPORT");
+        LearnerMaterialReference nextStepMaterial = extractMaterial(currentChapter, "NEXT_STEP_NOTE");
+
+        LearnerCurrentContextResponse response = new LearnerCurrentContextResponse();
+        response.setUserId(learnerUser.getId());
+        response.setGoalId(goal.getId());
+        response.setFeishuOpenId(feishuOpenId);
+        response.setTopic(goal.getTopic());
+        response.setGoalStatus(goal.getStatus());
+        response.setTodayTask(todayTask);
+        response.setCurrentChapter(currentChapter);
+        if (evaluationMaterial != null) {
+            response.setEvaluationMaterialId(evaluationMaterial.getMaterialId());
+            response.setEvaluationFilePath(evaluationMaterial.getFilePath());
+        }
+        if (nextStepMaterial != null) {
+            response.setNextStepMaterialId(nextStepMaterial.getMaterialId());
+            response.setNextStepFilePath(nextStepMaterial.getFilePath());
+        }
+        return response;
+    }
+
     private GoalUpsertRequest toGoalRequest(LearnerSetupRequest request) {
         GoalUpsertRequest goalRequest = new GoalUpsertRequest();
         goalRequest.setFeishuOpenId(request.getFeishuOpenId());
@@ -200,5 +232,33 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
             throw new IllegalArgumentException("goal not found");
         }
         return goal;
+    }
+
+    private ChapterDetailResponse resolveCurrentChapter(Long goalId, TaskResponse todayTask) {
+        if (todayTask != null && todayTask.getChapterId() != null) {
+            return chapterService.getChapterDetail(todayTask.getChapterId());
+        }
+        List<ChapterSummaryResponse> chapters = chapterService.listChaptersByGoalId(goalId);
+        return chapters.stream()
+                .filter(chapter -> "IN_PROGRESS".equals(chapter.getStatus()))
+                .findFirst()
+                .map(ChapterSummaryResponse::getChapterId)
+                .map(chapterService::getChapterDetail)
+                .orElse(null);
+    }
+
+    private LearnerMaterialReference extractMaterial(ChapterDetailResponse chapterDetail, String materialType) {
+        if (chapterDetail == null || chapterDetail.getMaterials() == null) {
+            return null;
+        }
+        return chapterDetail.getMaterials().stream()
+                .filter(material -> materialType.equals(material.getMaterialType()))
+                .findFirst()
+                .map(this::toMaterialReference)
+                .orElse(null);
+    }
+
+    private LearnerMaterialReference toMaterialReference(ChapterMaterialResponse material) {
+        return new LearnerMaterialReference(material.getId(), material.getFilePath());
     }
 }

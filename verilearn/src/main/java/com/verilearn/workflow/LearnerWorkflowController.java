@@ -4,6 +4,7 @@ import com.verilearn.chapter.dto.ChapterSummaryResponse;
 import com.verilearn.common.ApiResponse;
 import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.task.dto.TaskResponse;
+import com.verilearn.workflow.dto.LearnerCurrentContextResponse;
 import com.verilearn.workflow.dto.LearnerDashboardResponse;
 import com.verilearn.workflow.dto.LearnerSetupRequest;
 import com.verilearn.workflow.dto.LearnerSetupResponse;
@@ -51,5 +52,10 @@ public class LearnerWorkflowController {
     @GetMapping("/{feishuOpenId}/dashboard")
     public ApiResponse<LearnerDashboardResponse> getDashboard(@PathVariable String feishuOpenId) {
         return ApiResponse.success("dashboard queried successfully", learnerWorkflowService.getDashboard(feishuOpenId));
+    }
+
+    @GetMapping("/{feishuOpenId}/current-context")
+    public ApiResponse<LearnerCurrentContextResponse> getCurrentContext(@PathVariable String feishuOpenId) {
+        return ApiResponse.success("current learning context queried successfully", learnerWorkflowService.getCurrentContext(feishuOpenId));
     }
 }

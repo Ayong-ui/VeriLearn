@@ -2,6 +2,9 @@ package com.verilearn.chapter;
 
 import com.verilearn.chapter.dto.ChapterBootstrapResponse;
 import com.verilearn.chapter.dto.ChapterDetailResponse;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationRequest;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
+import com.verilearn.chapter.dto.ChapterMaterialContentResponse;
 import com.verilearn.chapter.dto.ChapterStepSubmitRequest;
 import com.verilearn.chapter.dto.ChapterStepSubmitResponse;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
@@ -67,5 +70,18 @@ public class ChapterController {
     @PostMapping("/api/chapters/{chapterId}/materials/generate")
     public ApiResponse<ChapterDetailResponse> generateMaterials(@PathVariable Long chapterId) {
         return ApiResponse.success("chapter materials generated successfully", chapterService.generateMaterials(chapterId));
+    }
+
+    @GetMapping("/api/materials/{materialId}/content")
+    public ApiResponse<ChapterMaterialContentResponse> getMaterialContent(@PathVariable Long materialId) {
+        return ApiResponse.success("chapter material content queried successfully", chapterService.getMaterialContent(materialId));
+    }
+
+    @PostMapping("/api/chapters/{chapterId}/demo-evaluations")
+    public ApiResponse<ChapterDemoEvaluationResponse> evaluateDemoSubmission(
+            @PathVariable Long chapterId,
+            @Valid @RequestBody ChapterDemoEvaluationRequest request
+    ) {
+        return ApiResponse.success("chapter demo evaluated successfully", chapterService.evaluateDemoSubmission(chapterId, request));
     }
 }
