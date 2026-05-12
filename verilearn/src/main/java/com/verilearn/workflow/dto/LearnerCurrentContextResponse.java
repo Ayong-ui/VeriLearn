@@ -3,6 +3,8 @@ package com.verilearn.workflow.dto;
 import com.verilearn.chapter.dto.ChapterDetailResponse;
 import com.verilearn.task.dto.TaskResponse;
 
+import java.util.List;
+
 public class LearnerCurrentContextResponse {
 
     private Long userId;
@@ -14,8 +16,11 @@ public class LearnerCurrentContextResponse {
     private ChapterDetailResponse currentChapter;
     private Long evaluationMaterialId;
     private String evaluationFilePath;
+    private String evaluationContentUrl;
     private Long nextStepMaterialId;
     private String nextStepFilePath;
+    private String nextStepContentUrl;
+    private List<LearnerMaterialReference> currentMaterials;
 
     public Long getUserId() {
         return userId;
@@ -89,6 +94,14 @@ public class LearnerCurrentContextResponse {
         this.evaluationFilePath = evaluationFilePath;
     }
 
+    public String getEvaluationContentUrl() {
+        return evaluationContentUrl;
+    }
+
+    public void setEvaluationContentUrl(String evaluationContentUrl) {
+        this.evaluationContentUrl = evaluationContentUrl;
+    }
+
     public Long getNextStepMaterialId() {
         return nextStepMaterialId;
     }
@@ -103,5 +116,21 @@ public class LearnerCurrentContextResponse {
 
     public void setNextStepFilePath(String nextStepFilePath) {
         this.nextStepFilePath = nextStepFilePath;
+    }
+
+    public String getNextStepContentUrl() {
+        return nextStepContentUrl;
+    }
+
+    public void setNextStepContentUrl(String nextStepContentUrl) {
+        this.nextStepContentUrl = nextStepContentUrl;
+    }
+
+    public List<LearnerMaterialReference> getCurrentMaterials() {
+        return currentMaterials;
+    }
+
+    public void setCurrentMaterials(List<LearnerMaterialReference> currentMaterials) {
+        this.currentMaterials = currentMaterials;
     }
 }

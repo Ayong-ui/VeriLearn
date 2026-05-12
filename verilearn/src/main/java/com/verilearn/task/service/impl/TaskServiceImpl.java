@@ -348,6 +348,7 @@ public class TaskServiceImpl implements TaskService {
                 .ifPresent(material -> {
                     response.setTheoryMaterialId(material.getId());
                     response.setTheoryFilePath(material.getFilePath());
+                    response.setTheoryContentUrl("/api/materials/" + material.getId() + "/content");
                 });
 
         materials.stream()
@@ -356,6 +357,7 @@ public class TaskServiceImpl implements TaskService {
                 .ifPresent(material -> {
                     response.setDemoMaterialId(material.getId());
                     response.setDemoFilePath(material.getFilePath());
+                    response.setDemoContentUrl("/api/materials/" + material.getId() + "/content");
                 });
     }
 

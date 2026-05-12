@@ -3,6 +3,8 @@ package com.verilearn.workflow.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.verilearn.chapter.dto.ChapterBootstrapResponse;
 import com.verilearn.chapter.dto.ChapterDetailResponse;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationRequest;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
 import com.verilearn.chapter.dto.ChapterMaterialResponse;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
 import com.verilearn.chapter.service.ChapterService;
@@ -34,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -123,6 +126,7 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         List<ChapterSummaryResponse> chapters = chapterService.listChaptersByGoalId(goal.getId());
         List<ChapterSummaryResponse> pendingReviews = chapterService.listPendingReviewsByGoalId(goal.getId());
         TaskResponse todayTask = taskService.findTaskByUserAndDate(learnerUser.getId(), LocalDate.now());
+        ChapterDetailResponse currentChapter = resolveCurrentChapter(goal.getId(), todayTask);
 
         LearnerDashboardResponse response = new LearnerDashboardResponse();
         response.setUserId(learnerUser.getId());
@@ -136,6 +140,8 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         response.setProgress(progress);
         response.setChapterCount(chapters.size());
         response.setPendingReviewCount(pendingReviews.size());
+        response.setCurrentChapter(currentChapter);
+        response.setCurrentMaterials(buildCurrentMaterials(currentChapter));
         response.setChapters(chapters);
         response.setPendingReviews(pendingReviews);
         return response;
@@ -161,12 +167,23 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         if (evaluationMaterial != null) {
             response.setEvaluationMaterialId(evaluationMaterial.getMaterialId());
             response.setEvaluationFilePath(evaluationMaterial.getFilePath());
+            response.setEvaluationContentUrl("/api/materials/" + evaluationMaterial.getMaterialId() + "/content");
         }
         if (nextStepMaterial != null) {
             response.setNextStepMaterialId(nextStepMaterial.getMaterialId());
             response.setNextStepFilePath(nextStepMaterial.getFilePath());
+            response.setNextStepContentUrl("/api/materials/" + nextStepMaterial.getMaterialId() + "/content");
         }
+        response.setCurrentMaterials(buildCurrentMaterials(currentChapter));
         return response;
+    }
+
+    @Override
+    @Transactional
+    public ChapterDemoEvaluationResponse evaluateDemoSubmission(String feishuOpenId, Long chapterId, ChapterDemoEvaluationRequest request) {
+        LearningGoal goal = getLatestGoalByOpenId(feishuOpenId);
+        ensureChapterBelongsToGoal(goal.getId(), chapterId);
+        return chapterService.evaluateDemoSubmission(chapterId, request);
     }
 
     private GoalUpsertRequest toGoalRequest(LearnerSetupRequest request) {
@@ -234,6 +251,13 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         return goal;
     }
 
+    private void ensureChapterBelongsToGoal(Long goalId, Long chapterId) {
+        ChapterDetailResponse chapterDetail = chapterService.getChapterDetail(chapterId);
+        if (!goalId.equals(chapterDetail.getGoalId())) {
+            throw new IllegalArgumentException("chapter does not belong to current learner goal");
+        }
+    }
+
     private ChapterDetailResponse resolveCurrentChapter(Long goalId, TaskResponse todayTask) {
         if (todayTask != null && todayTask.getChapterId() != null) {
             return chapterService.getChapterDetail(todayTask.getChapterId());
@@ -259,6 +283,42 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
     }
 
     private LearnerMaterialReference toMaterialReference(ChapterMaterialResponse material) {
-        return new LearnerMaterialReference(material.getId(), material.getFilePath());
+        return new LearnerMaterialReference(
+                material.getId(),
+                material.getMaterialType(),
+                resolveDisplayName(material.getMaterialType()),
+                material.getFilePath(),
+                "/api/materials/" + material.getId() + "/content"
+        );
+    }
+
+    private List<LearnerMaterialReference> buildCurrentMaterials(ChapterDetailResponse chapterDetail) {
+        if (chapterDetail == null || chapterDetail.getMaterials() == null) {
+            return List.of();
+        }
+        return chapterDetail.getMaterials().stream()
+                .map(this::toMaterialReference)
+                .sorted(Comparator.comparingInt(reference -> materialPriority(reference.getMaterialType())))
+                .toList();
+    }
+
+    private String resolveDisplayName(String materialType) {
+        return switch (materialType) {
+            case "THEORY_DOC" -> "理论文档";
+            case "DEMO_GUIDE" -> "Demo 任务";
+            case "EVALUATION_REPORT" -> "评估报告";
+            case "NEXT_STEP_NOTE" -> "下一步建议";
+            default -> materialType;
+        };
+    }
+
+    private int materialPriority(String materialType) {
+        return switch (materialType) {
+            case "THEORY_DOC" -> 1;
+            case "DEMO_GUIDE" -> 2;
+            case "EVALUATION_REPORT" -> 3;
+            case "NEXT_STEP_NOTE" -> 4;
+            default -> 99;
+        };
     }
 }

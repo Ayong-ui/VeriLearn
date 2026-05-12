@@ -1,6 +1,8 @@
 package com.verilearn.workflow;
 
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationRequest;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
 import com.verilearn.common.ApiResponse;
 import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.task.dto.TaskResponse;
@@ -57,5 +59,17 @@ public class LearnerWorkflowController {
     @GetMapping("/{feishuOpenId}/current-context")
     public ApiResponse<LearnerCurrentContextResponse> getCurrentContext(@PathVariable String feishuOpenId) {
         return ApiResponse.success("current learning context queried successfully", learnerWorkflowService.getCurrentContext(feishuOpenId));
+    }
+
+    @PostMapping("/{feishuOpenId}/chapters/{chapterId}/demo-evaluations")
+    public ApiResponse<ChapterDemoEvaluationResponse> evaluateDemoSubmission(
+            @PathVariable String feishuOpenId,
+            @PathVariable Long chapterId,
+            @Valid @RequestBody ChapterDemoEvaluationRequest request
+    ) {
+        return ApiResponse.success(
+                "learner demo evaluated successfully",
+                learnerWorkflowService.evaluateDemoSubmission(feishuOpenId, chapterId, request)
+        );
     }
 }

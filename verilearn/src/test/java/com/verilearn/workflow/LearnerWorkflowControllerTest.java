@@ -120,6 +120,8 @@ class LearnerWorkflowControllerTest {
                 .andExpect(jsonPath("$.data.status").value("PENDING"))
                 .andExpect(jsonPath("$.data.chapterTitle").value("Java basics"))
                 .andExpect(jsonPath("$.data.stepType").value("READ_THEORY"))
+                .andExpect(jsonPath("$.data.theoryContentUrl").value(org.hamcrest.Matchers.endsWith("/content")))
+                .andExpect(jsonPath("$.data.demoContentUrl").value(org.hamcrest.Matchers.endsWith("/content")))
                 .andExpect(jsonPath("$.data.validationItems.length()").value(2))
                 .andReturn()
                 .getResponse()
@@ -179,6 +181,10 @@ class LearnerWorkflowControllerTest {
                 .andExpect(jsonPath("$.data.todayTask.taskId").value(taskId))
                 .andExpect(jsonPath("$.data.todayTask.stepType").value("READ_THEORY"))
                 .andExpect(jsonPath("$.data.progress.totalChapters").value(3))
+                .andExpect(jsonPath("$.data.currentChapter.chapterId").exists())
+                .andExpect(jsonPath("$.data.currentMaterials.length()").value(2))
+                .andExpect(jsonPath("$.data.currentMaterials[0].materialType").value("THEORY_DOC"))
+                .andExpect(jsonPath("$.data.currentMaterials[1].materialType").value("DEMO_GUIDE"))
                 .andExpect(jsonPath("$.data.chapters.length()").value(3))
                 .andExpect(jsonPath("$.data.pendingReviews.length()").value(0));
     }
@@ -244,7 +250,7 @@ class LearnerWorkflowControllerTest {
 
         Long demoStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[1].id");
 
-        mockMvc.perform(post("/api/chapters/{chapterId}/demo-evaluations", chapterId)
+        mockMvc.perform(post("/api/learners/{feishuOpenId}/chapters/{chapterId}/demo-evaluations", openId, chapterId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -264,8 +270,17 @@ class LearnerWorkflowControllerTest {
                 .andExpect(jsonPath("$.data.todayTask.taskId").value(taskId))
                 .andExpect(jsonPath("$.data.currentChapter.chapterId").value(chapterId))
                 .andExpect(jsonPath("$.data.currentChapter.steps[2].stepType").value("SUBMIT_FEEDBACK"))
+                .andExpect(jsonPath("$.data.currentMaterials.length()").value(4))
+                .andExpect(jsonPath("$.data.currentMaterials[0].materialType").value("THEORY_DOC"))
+                .andExpect(jsonPath("$.data.currentMaterials[0].displayName").value("理论文档"))
+                .andExpect(jsonPath("$.data.currentMaterials[0].contentUrl").value(org.hamcrest.Matchers.endsWith("/content")))
+                .andExpect(jsonPath("$.data.currentMaterials[1].materialType").value("DEMO_GUIDE"))
+                .andExpect(jsonPath("$.data.currentMaterials[2].materialType").value("EVALUATION_REPORT"))
+                .andExpect(jsonPath("$.data.currentMaterials[3].materialType").value("NEXT_STEP_NOTE"))
                 .andExpect(jsonPath("$.data.evaluationFilePath").value(org.hamcrest.Matchers.endsWith("evaluation-report.md")))
-                .andExpect(jsonPath("$.data.nextStepFilePath").value(org.hamcrest.Matchers.endsWith("next-step.md")));
+                .andExpect(jsonPath("$.data.evaluationContentUrl").value(org.hamcrest.Matchers.endsWith("/content")))
+                .andExpect(jsonPath("$.data.nextStepFilePath").value(org.hamcrest.Matchers.endsWith("next-step.md")))
+                .andExpect(jsonPath("$.data.nextStepContentUrl").value(org.hamcrest.Matchers.endsWith("/content")));
     }
 
     private AiDemoEvaluationResult mockEvaluationResult() {

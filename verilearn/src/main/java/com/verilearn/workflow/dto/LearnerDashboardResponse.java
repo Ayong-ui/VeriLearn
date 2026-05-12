@@ -1,5 +1,6 @@
 package com.verilearn.workflow.dto;
 
+import com.verilearn.chapter.dto.ChapterDetailResponse;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
 import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.task.dto.TaskResponse;
@@ -19,6 +20,8 @@ public class LearnerDashboardResponse {
     private ProgressResponse progress;
     private int chapterCount;
     private int pendingReviewCount;
+    private ChapterDetailResponse currentChapter;
+    private List<LearnerMaterialReference> currentMaterials;
     private List<ChapterSummaryResponse> chapters;
     private List<ChapterSummaryResponse> pendingReviews;
 
@@ -108,6 +111,22 @@ public class LearnerDashboardResponse {
 
     public void setPendingReviewCount(int pendingReviewCount) {
         this.pendingReviewCount = pendingReviewCount;
+    }
+
+    public ChapterDetailResponse getCurrentChapter() {
+        return currentChapter;
+    }
+
+    public void setCurrentChapter(ChapterDetailResponse currentChapter) {
+        this.currentChapter = currentChapter;
+    }
+
+    public List<LearnerMaterialReference> getCurrentMaterials() {
+        return currentMaterials;
+    }
+
+    public void setCurrentMaterials(List<LearnerMaterialReference> currentMaterials) {
+        this.currentMaterials = currentMaterials;
     }
 
     public List<ChapterSummaryResponse> getChapters() {

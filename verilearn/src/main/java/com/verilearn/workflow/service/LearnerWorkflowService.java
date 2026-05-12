@@ -3,6 +3,8 @@ package com.verilearn.workflow.service;
 import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.task.dto.TaskResponse;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationRequest;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
 import com.verilearn.workflow.dto.LearnerCurrentContextResponse;
 import com.verilearn.workflow.dto.LearnerDashboardResponse;
 import com.verilearn.workflow.dto.LearnerSetupRequest;
@@ -23,4 +25,6 @@ public interface LearnerWorkflowService {
     LearnerDashboardResponse getDashboard(String feishuOpenId);
 
     LearnerCurrentContextResponse getCurrentContext(String feishuOpenId);
+
+    ChapterDemoEvaluationResponse evaluateDemoSubmission(String feishuOpenId, Long chapterId, ChapterDemoEvaluationRequest request);
 }

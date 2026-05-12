@@ -16,8 +16,10 @@ public class TaskResponse {
     private String chapterTitle;
     private Long theoryMaterialId;
     private String theoryFilePath;
+    private String theoryContentUrl;
     private Long demoMaterialId;
     private String demoFilePath;
+    private String demoContentUrl;
     private LocalDate taskDate;
     private String stepType;
     private Integer stepOrder;
@@ -98,6 +100,14 @@ public class TaskResponse {
         this.theoryFilePath = theoryFilePath;
     }
 
+    public String getTheoryContentUrl() {
+        return theoryContentUrl;
+    }
+
+    public void setTheoryContentUrl(String theoryContentUrl) {
+        this.theoryContentUrl = theoryContentUrl;
+    }
+
     public Long getDemoMaterialId() {
         return demoMaterialId;
     }
@@ -112,6 +122,14 @@ public class TaskResponse {
 
     public void setDemoFilePath(String demoFilePath) {
         this.demoFilePath = demoFilePath;
+    }
+
+    public String getDemoContentUrl() {
+        return demoContentUrl;
+    }
+
+    public void setDemoContentUrl(String demoContentUrl) {
+        this.demoContentUrl = demoContentUrl;
     }
 
     public LocalDate getTaskDate() {

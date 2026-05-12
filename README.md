@@ -1,72 +1,115 @@
 # VeriLearn
 
-[中文](#中文说明) | [English](#english)
+VeriLearn 是一个运行在飞书中的 AI 学习执行系统。
+
+它不是资料库，不是普通问答机器人，也不是单纯的提醒 Bot。它更像一个学习教练：帮用户安排今天学什么、去哪里看理论、做什么 Demo、学完后提交什么结果，并根据反馈决定下一步是继续、补充还是复习。
+
+当前仓库是 **V1 测试版后端实现**。这一版优先解决的不是“内容够不够多”，而是把学习过程做成一条可执行、可验证、可调整、可复习的闭环。
 
 ---
 
-## 中文说明
+## 1. 产品是什么
 
-### 项目简介
+从用户视角看，VeriLearn 的使用方式应该是：
 
-VeriLearn 是一个面向自学场景的 **AI 学习执行系统** 后端项目。  
-它不想解决“资料不够多”的问题，而是想把学习过程做成一条可执行、可验证、可调整、可复盘的闭环。
+1. 在飞书里开始一个学习主题，例如 `/start Java 后端`
+2. 系统初始化学习目标、章节和默认学习材料
+3. 用户每天接收“今天学什么”的任务
+4. 用户查看理论材料和 Demo 指南
+5. 用户在本地完成 Demo，并把结果或反馈发回系统
+6. 系统调用 AI 评估掌握度，生成评估报告和下一步建议
+7. 系统继续推进学习，或把章节送入复习
 
-当前仓库是 VeriLearn 的 **V1 测试版后端实现**。  
-这一版的目标不是一次做完整个平台，而是先把下面这条核心链路跑通：
+对应的产品主链路是：
 
 ```text
-开始学习主题
-  -> 初始化知识点和章节
-  -> 生成今天任务
-  -> 查看理论 / Demo 材料
-  -> 完成本地实操
-  -> 提交学习结果
-  -> AI 评估掌握度
-  -> 生成评估报告与下一步建议
+学习主题
+  -> 章节
+  -> 今日任务
+  -> 理论文档
+  -> Demo 实操
+  -> 用户反馈
+  -> AI 评估
+  -> 下一步建议 / 复习
 ```
 
-### 产品定位
+---
 
-VeriLearn 更像一个运行在飞书中的 **学习教练**，而不是单纯的提醒机器人或问答机器人。
+## 2. 为什么这样设计
 
-它负责：
+VeriLearn 的核心判断是：
 
-- 按章节组织学习内容
-- 生成当天任务
-- 给出理论材料和 Demo 指南
-- 收集用户反馈
-- 用 AI 评估掌握度
-- 根据结果安排下一步或复习
+- 真正缺的不是更多资料，而是更稳定的学习推进机制
+- 用户经常停在“看懂了”，而不是“做出来了”
+- AI 更适合承担内容生成、内容压缩和反馈分析，而不是替用户学习
+- 飞书适合作为学习入口，因为它天然适合推送、提醒和轻量交互
 
-### 当前状态
+所以，这个项目没有把重点放在“再做一个内容平台”，而是放在：
 
-项目当前处于 **V1 测试版后端已成型** 阶段，已经具备：
+- 如何生成今天的学习任务
+- 如何把理论和 Demo 交给用户
+- 如何回收用户结果
+- 如何用 AI 评估并决定下一步
 
-- Spring Boot 后端骨架
-- MySQL 持久化
-- 统一响应结构与全局异常处理
-- 学习目标、知识点、章节、任务、验证、进度模块
-- DeepSeek AI 理论 / Demo / 评估能力接入
-- 学习空间 `Markdown` 材料落盘
-- 飞书事件入口与本地可测的交互骨架
-- 自动化测试
+---
 
-### 核心能力
+## 3. 底层交互原理
 
-#### 1. 学习目标与章节初始化
+这个系统的底层交互可以概括成四层：
 
-- 创建或更新学习目标
-- 保存并确认知识点
-- 基于知识点初始化章节、步骤和默认材料
+### 3.1 飞书交互层
 
-#### 2. 今日任务生成
+负责用户入口和消息出口。
 
-- 按当前章节步骤生成唯一任务
-- 返回任务对应的理论文件和 Demo 文件路径
+用户在飞书里做这些事：
 
-#### 3. 学习空间材料
+- 发起学习主题
+- 接收今天任务
+- 查看当前章节
+- 查看理论和 Demo 入口
+- 提交完成反馈
+- 接收评估结果和下一步建议
 
-系统会把章节材料真正落成 `.md` 文件，当前默认目录结构类似：
+### 3.2 后端工作流层
+
+负责整个学习流程的控制与编排。
+
+后端决定：
+
+- 当前用户学到哪一章
+- 今天该做哪一步
+- 哪些材料应该展示给用户
+- 什么时候调用 AI
+- AI 返回结果后怎么更新数据库、写文件、回复飞书
+
+### 3.3 AI 能力层
+
+AI 在当前设计里不是系统控制器，而是内容生成与反馈分析引擎。
+
+AI 负责：
+
+- 生成理论材料
+- 生成 Demo 指南
+- 分析用户提交的学习结果
+- 生成评估报告
+- 生成下一步建议
+
+AI 不直接：
+
+- 更新数据库
+- 创建目录或写文件
+- 发送飞书消息
+- 调用后端接口
+
+这些动作都由后端执行，这样系统更可控、更容易测试。
+
+### 3.4 学习空间层
+
+学习材料最终不是只停留在数据库里，而是会真正落成 Markdown 文件。
+
+这是为了让系统不只是“会推任务”，而是能给用户一个真实的学习空间。
+
+当前默认结构类似：
 
 ```text
 verilearn/learning-space/
@@ -82,24 +125,94 @@ verilearn/learning-space/
           next-step.md
 ```
 
-#### 4. Demo 提交与 AI 评估
+---
 
-用户完成本地 Demo 后，可以提交：
+## 4. 数据库和文件系统分别做什么
 
-- 完成说明
-- 代码片段
-- 提问内容
+这是项目里一个很重要的设计点。
 
-系统随后会：
+### 数据库负责
 
-- 调用 AI 评估掌握度
-- 生成 `evaluation-report.md`
-- 生成 `next-step.md`
-- 推进章节状态
+- 用户
+- 学习目标
+- 知识点
+- 章节
+- 章节步骤
+- 今日任务
+- 验证项
+- 评估状态
+- 材料索引
 
-#### 5. 工作流聚合接口
+也就是：**数据库负责状态、关系和流程控制。**
 
-除了底层 REST 接口，当前还提供了更适合演示和后续飞书接入的工作流接口：
+### 文件系统负责
+
+- 理论文档
+- Demo 任务说明
+- 评估报告
+- 下一步建议
+
+也就是：**文件系统负责真正给用户看的内容。**
+
+因此这个项目不是“数据库单存储”，而是：
+
+**数据库管理流程，文件系统承载内容。**
+
+---
+
+## 5. 当前已经完成了什么
+
+当前 V1 测试版后端已经具备这些能力：
+
+- 学习目标初始化
+- 知识点保存与确认
+- 章节初始化
+- 章节步骤推进
+- 今日任务生成
+- DeepSeek 理论材料生成
+- Demo 指南生成
+- 本地学习空间 Markdown 落盘
+- Demo 结果提交
+- AI 评估掌握度
+- 评估报告与下一步建议生成
+- 进度查询
+- 当前学习上下文聚合
+- 飞书事件接入代码骨架
+- 飞书文本消息发送代码骨架
+- 飞书卡片预览 / 回调骨架
+
+当前更接近：
+
+**可本地联调、可演示流程的学习执行系统测试版**
+
+而不是已经完成真实飞书平台联调的成品。
+
+---
+
+## 6. 当前的可演示主流程
+
+如果在本地演示，当前最适合展示这条链路：
+
+1. `POST /api/learners/setup`
+2. `GET /api/learners/{feishuOpenId}/today-task`
+3. `GET /api/materials/{materialId}/content`
+4. `POST /api/learners/{feishuOpenId}/chapters/{chapterId}/demo-evaluations`
+5. `GET /api/learners/{feishuOpenId}/current-context`
+6. `GET /api/learners/{feishuOpenId}/dashboard`
+
+这条链能完整展示：
+
+- 今天学什么
+- 去哪里看理论
+- 去哪里做 Demo
+- Demo 做完后怎么评估
+- 系统如何生成评估报告与下一步建议
+
+---
+
+## 7. 关键接口
+
+### 学习工作流
 
 - `POST /api/learners/setup`
 - `GET /api/learners/{feishuOpenId}/today-task`
@@ -107,54 +220,57 @@ verilearn/learning-space/
 - `GET /api/learners/{feishuOpenId}/chapters`
 - `GET /api/learners/{feishuOpenId}/dashboard`
 - `GET /api/learners/{feishuOpenId}/current-context`
+- `POST /api/learners/{feishuOpenId}/chapters/{chapterId}/demo-evaluations`
 
-其中 `current-context` 会返回：
+### 章节与材料
 
-- 今日任务
-- 当前章节详情
-- 最近评估报告文件路径
-- 下一步建议文件路径
+- `GET /api/chapters/{chapterId}`
+- `POST /api/chapters/{chapterId}/steps/submit`
+- `GET /api/materials/{materialId}/content`
 
-### 飞书接入状态
+### 任务与验证
 
-当前仓库已经完成了 **飞书代码接入层**：
+- `POST /api/tasks/{taskId}/submit`
+- `POST /api/tasks/{taskId}/validation-items/generate`
+
+### 飞书代码接入骨架
 
 - `POST /api/feishu/events`
-- 文本命令解析：`/start`、`/today`、`/progress`、`/dashboard`
-- 飞书文本回复客户端
-- 飞书卡片预览 / 回调骨架
+- `GET /api/feishu/cards/learners/{openId}/today-task`
+- `GET /api/feishu/cards/learners/{openId}/dashboard`
+- `POST /api/feishu/cards/callbacks`
 
-但 **真实飞书平台联调还没有完成**。  
-也就是说，当前已经具备：
+---
 
-- 本地可测的飞书适配层
+## 8. 飞书当前做到哪一步了
 
-还未完成：
+这部分需要特别说明清楚。
 
-- 公网回调地址联通
-- 飞书后台真实事件订阅
-- 真实机器人消息 / 卡片回发验证
+当前仓库已经完成的是：
 
-### AI 职责
+- 飞书事件接收接口
+- 命令解析骨架
+- 文本回复客户端
+- 卡片预览与回调骨架
 
-在 VeriLearn 中，AI 的职责是：
+但这并不等于：
 
-- 生成理论材料
-- 生成 Demo 指南
-- 分析用户提交结果
-- 生成评估报告
-- 生成下一步建议
+- 真实飞书机器人已经完全打通
 
-AI **不直接**：
+当前状态应该准确理解为：
 
-- 更新数据库
-- 创建目录或写文件
-- 调用后端接口
-- 发送飞书消息
+**飞书代码适配层已完成，真实平台联调尚未完成。**
 
-这些都由后端系统统一执行，这样更可控、更容易测试。
+真实联调后续还需要：
 
-### 技术栈
+- 配置真实 `App ID / App Secret / Verification Token`
+- 公网回调地址
+- 飞书后台事件订阅
+- 真机发消息验证
+
+---
+
+## 9. 技术栈
 
 - Java 17
 - Spring Boot 3.5.13
@@ -165,7 +281,9 @@ AI **不直接**：
 - DeepSeek Chat Completions API
 - JUnit 5
 
-### 目录结构
+---
+
+## 10. 项目结构
 
 ```text
 VeriLearn/
@@ -173,8 +291,6 @@ VeriLearn/
 ├── .gitignore
 └── verilearn/
     ├── pom.xml
-    ├── mvnw
-    ├── mvnw.cmd
     ├── maven-settings.xml
     └── src/
         ├── main/
@@ -194,24 +310,24 @@ VeriLearn/
         └── test/
 ```
 
-### 快速开始
+---
 
-#### 环境要求
+## 11. 本地启动
+
+### 环境要求
 
 - JDK 17
 - Maven 3.9.x
 - MySQL 8.x
-- Windows（当前优先验证的部署环境）
+- Windows
 
-#### 1. 创建数据库
+### 创建数据库
 
 ```sql
 CREATE DATABASE verilearn DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-#### 2. 配置环境变量
-
-当前支持的主要环境变量包括：
+### 常用环境变量
 
 - `VERILEARN_DB_URL`
 - `VERILEARN_DB_USERNAME`
@@ -225,262 +341,79 @@ CREATE DATABASE verilearn DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_
 - `VERILEARN_FEISHU_VERIFICATION_TOKEN`
 - `VERILEARN_LEARNING_SPACE_ROOT`
 
-#### 3. 启动项目
+### 启动项目
 
 ```bash
 mvn -s verilearn/maven-settings.xml -f verilearn/pom.xml spring-boot:run
 ```
 
-#### 4. 运行测试
+### 运行测试
 
 ```bash
 mvn -s verilearn/maven-settings.xml -f verilearn/pom.xml test
 ```
 
-#### 5. 打开接口文档
+### 查看 Swagger
 
 ```text
 http://localhost:8080/swagger-ui/index.html
 ```
-
-### 关键接口
-
-- `POST /api/learners/setup`
-- `GET /api/learners/{feishuOpenId}/today-task`
-- `GET /api/learners/{feishuOpenId}/dashboard`
-- `GET /api/learners/{feishuOpenId}/current-context`
-- `GET /api/chapters/{chapterId}`
-- `GET /api/materials/{materialId}/content`
-- `POST /api/chapters/{chapterId}/steps/submit`
-- `POST /api/chapters/{chapterId}/demo-evaluations`
-- `POST /api/tasks/{taskId}/submit`
-- `POST /api/tasks/{taskId}/validation-items/generate`
-- `POST /api/feishu/events`
-
-### 测试情况
-
-当前自动化测试覆盖：
-
-- 目标设置
-- 知识点保存与确认
-- 章节初始化与步骤推进
-- 今日任务生成
-- Demo 结果评估
-- 进度查询
-- 飞书事件入口
-- 数据库读写冒烟测试
-
-当前本地测试结果：
-
-- `25` tests
-- `0` failures
-- `0` errors
-
-### 后续路线
-
-#### V1 继续收口
-
-- 真正打通飞书平台联调
-- 让飞书消息直接指向学习空间和材料内容
-- 收口最终演示链路
-
-#### V2
-
-- 更完整的章节驱动学习模型
-- 更稳定的 AI 上下文组织
-- 更丰富的 Demo / 练习 / 复习机制
-- 更强的学习产物管理
-
-### License
-
-当前仓库尚未添加正式开源许可证。
 
 ---
 
-## English
+## 12. 测试状态
 
-### Overview
+当前本地自动化测试结果：
 
-VeriLearn is an **AI learning execution system** backend for self-learning scenarios.
-
-Its purpose is not simply to provide more content, but to turn learning into a workflow that can be executed, verified, adjusted, and reviewed.
-
-This repository currently represents the **V1 test-build backend**.  
-The goal of this version is to establish a runnable and demoable core flow:
-
-```text
-Start a learning topic
-  -> initialize knowledge nodes and chapters
-  -> generate today's task
-  -> read theory and demo materials
-  -> finish local practice
-  -> submit learning result
-  -> let AI evaluate mastery
-  -> generate evaluation and next-step notes
-```
-
-### Product Positioning
-
-VeriLearn is designed as an **AI learning coach inside Feishu**, not just a reminder bot or a passive Q&A bot.
-
-It is responsible for:
-
-- organizing learning by chapter
-- generating daily tasks
-- providing theory and demo materials
-- collecting user feedback
-- evaluating learning results with AI
-- deciding the next step or review
-
-### Current Status
-
-The project is currently in the **V1 test-build backend** stage and already includes:
-
-- Spring Boot backend scaffold
-- MySQL persistence
-- unified response and global exception handling
-- goal / knowledge / chapter / task / validation / progress modules
-- DeepSeek-powered theory, demo, and evaluation generation
-- local Markdown learning-space files
-- Feishu callback and local interaction skeleton
-- automated tests
-
-### Core Features
-
-- learning goal setup and update
-- knowledge node save / confirm / query
-- chapter bootstrap and chapter-step progression
-- daily task generation
-- theory and demo Markdown material generation
-- local learning-space persistence
-- demo submission and AI evaluation
-- evaluation report and next-step note generation
-- learner-oriented workflow APIs
-- Feishu event callback skeleton
-
-### Learning Space
-
-Generated materials are stored as Markdown files under a local learning-space structure, for example:
-
-```text
-verilearn/learning-space/
-  spring-boot/
-    01-spring-basics/
-      user/
-        theory/
-          theory.md
-        demo/
-          demo-task.md
-        summary/
-          evaluation-report.md
-          next-step.md
-```
-
-### Feishu Status
-
-The repository already includes the **Feishu code integration layer**:
-
-- event callback endpoint
-- command parsing
-- text reply client
-- card preview / callback skeleton
-
-However, **real Feishu platform integration is not finished yet**.  
-The code side is ready; the actual platform-side webhook/public URL verification still remains.
-
-### AI Responsibility
-
-In VeriLearn, AI is responsible for:
-
-- generating theory materials
-- generating demo guides
-- analyzing user submissions
-- generating evaluation reports
-- generating next-step suggestions
-
-AI does **not** directly:
-
-- update the database
-- create files by itself
-- call backend APIs
-- send Feishu messages
-
-Those actions are executed by the backend so that the workflow stays controllable and testable.
-
-### Tech Stack
-
-- Java 17
-- Spring Boot 3.5.13
-- Maven 3.9.x
-- MySQL 8.x
-- MyBatis-Plus 3.5.15
-- SpringDoc OpenAPI / Swagger UI
-- DeepSeek Chat Completions API
-- JUnit 5
-
-### Quick Start
-
-#### Requirements
-
-- JDK 17
-- Maven 3.9.x
-- MySQL 8.x
-- Windows (current primary deployment target)
-
-#### Create database
-
-```sql
-CREATE DATABASE verilearn DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-#### Run
-
-```bash
-mvn -s verilearn/maven-settings.xml -f verilearn/pom.xml spring-boot:run
-```
-
-#### Test
-
-```bash
-mvn -s verilearn/maven-settings.xml -f verilearn/pom.xml test
-```
-
-#### API Docs
-
-```text
-http://localhost:8080/swagger-ui/index.html
-```
-
-### Key APIs
-
-- `POST /api/learners/setup`
-- `GET /api/learners/{feishuOpenId}/today-task`
-- `GET /api/learners/{feishuOpenId}/dashboard`
-- `GET /api/learners/{feishuOpenId}/current-context`
-- `GET /api/chapters/{chapterId}`
-- `GET /api/materials/{materialId}/content`
-- `POST /api/chapters/{chapterId}/steps/submit`
-- `POST /api/chapters/{chapterId}/demo-evaluations`
-- `POST /api/tasks/{taskId}/submit`
-- `POST /api/tasks/{taskId}/validation-items/generate`
-- `POST /api/feishu/events`
-
-### Test Status
-
-Current local automated result:
-
-- `25` tests
+- `26` tests
 - `0` failures
 - `0` errors
 
-### Roadmap
+覆盖范围包括：
 
-- real Feishu platform integration
-- stronger learning-space navigation
-- richer chapter-driven workflow
-- stronger AI context management
-- richer review and learning artifact support
+- 目标设置
+- 知识点保存与确认
+- 章节初始化与推进
+- 材料查看
+- 今日任务生成
+- Demo 结果评估
+- 进度查询
+- 工作流聚合接口
+- 飞书事件入口骨架
+- 数据库读写冒烟测试
 
-### License
+---
+
+## 13. 接下来要做什么
+
+当前离“真实可演示产品”最近的后续工作主要是：
+
+1. 把飞书 `/today` 正式做成任务卡片
+2. 让飞书消息真正引用理论 / Demo / 评估 / 下一步的内容入口
+3. 打通真实飞书平台联调
+4. 收口最终演示脚本
+
+---
+
+## 14. English Summary
+
+VeriLearn is an AI learning execution system designed for Feishu-based learning workflows.
+
+This repository currently contains the **V1 test-build backend**, with support for:
+
+- learning goal setup
+- chapter bootstrap
+- daily task generation
+- Markdown learning materials
+- local demo submission
+- AI evaluation
+- current-context aggregation
+- Feishu integration skeleton
+
+The current version is **demo-ready on the backend side**, but **real Feishu platform linkage is still pending**.
+
+---
+
+## License
 
 No open-source license has been added yet.
