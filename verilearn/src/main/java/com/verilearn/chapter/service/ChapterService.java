@@ -31,5 +31,7 @@ public interface ChapterService {
 
     ChapterMaterialContentResponse getMaterialContent(Long materialId);
 
+    String getMaterialViewHtml(Long materialId);
+
     ChapterDemoEvaluationResponse evaluateDemoSubmission(Long chapterId, ChapterDemoEvaluationRequest request);
 }

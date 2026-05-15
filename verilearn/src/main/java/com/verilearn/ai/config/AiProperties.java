@@ -5,9 +5,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "verilearn.ai")
 public class AiProperties {
 
+    private String providerType;
     private String baseUrl;
     private String apiKey;
     private String model;
+
+    public String getProviderType() {
+        return providerType;
+    }
+
+    public void setProviderType(String providerType) {
+        this.providerType = providerType;
+    }
 
     public String getBaseUrl() {
         return baseUrl;

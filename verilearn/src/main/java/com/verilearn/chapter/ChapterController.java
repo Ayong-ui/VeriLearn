@@ -11,6 +11,7 @@ import com.verilearn.chapter.dto.ChapterSummaryResponse;
 import com.verilearn.chapter.service.ChapterService;
 import com.verilearn.common.ApiResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -75,6 +76,11 @@ public class ChapterController {
     @GetMapping("/api/materials/{materialId}/content")
     public ApiResponse<ChapterMaterialContentResponse> getMaterialContent(@PathVariable Long materialId) {
         return ApiResponse.success("chapter material content queried successfully", chapterService.getMaterialContent(materialId));
+    }
+
+    @GetMapping(value = "/materials/{materialId}/view", produces = MediaType.TEXT_HTML_VALUE)
+    public String viewMaterial(@PathVariable Long materialId) {
+        return chapterService.getMaterialViewHtml(materialId);
     }
 
     @PostMapping("/api/chapters/{chapterId}/demo-evaluations")

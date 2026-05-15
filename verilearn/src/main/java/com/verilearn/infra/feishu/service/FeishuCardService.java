@@ -10,5 +10,9 @@ public interface FeishuCardService {
 
     FeishuCardPreviewResponse buildDashboardCard(String openId);
 
+    FeishuCardPreviewResponse buildCurrentContextCard(String openId);
+
+    FeishuCardPreviewResponse buildAiProviderCard(String openId);
+
     FeishuCardActionResponse handleCardAction(FeishuCardActionRequest request);
 }

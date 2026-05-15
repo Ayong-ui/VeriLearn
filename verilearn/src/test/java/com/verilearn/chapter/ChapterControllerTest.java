@@ -100,7 +100,14 @@ class ChapterControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.materialId").value(firstMaterialId))
                 .andExpect(jsonPath("$.data.filePath").value(org.hamcrest.Matchers.endsWith(".md")))
+                .andExpect(jsonPath("$.data.viewUrl").value("/materials/" + firstMaterialId + "/view"))
                 .andExpect(jsonPath("$.data.contentText").value(org.hamcrest.Matchers.containsString("Spring basics")));
+
+        mockMvc.perform(get("/materials/{materialId}/view", firstMaterialId))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(org.hamcrest.Matchers.containsString("/api/materials/" + firstMaterialId + "/content")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(org.hamcrest.Matchers.containsString("theory.md")));
 
         mockMvc.perform(post("/api/chapters/{chapterId}/steps/submit", chapter.getId())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -236,7 +243,9 @@ class ChapterControllerTest {
                 .andExpect(jsonPath("$.data.completedStepId").value(secondStepId))
                 .andExpect(jsonPath("$.data.understandingLevel").value("HIGH"))
                 .andExpect(jsonPath("$.data.evaluationFilePath").value(org.hamcrest.Matchers.endsWith("evaluation-report.md")))
+                .andExpect(jsonPath("$.data.evaluationViewUrl").value(org.hamcrest.Matchers.endsWith("/view")))
                 .andExpect(jsonPath("$.data.nextStepFilePath").value(org.hamcrest.Matchers.endsWith("next-step.md")))
+                .andExpect(jsonPath("$.data.nextStepViewUrl").value(org.hamcrest.Matchers.endsWith("/view")))
                 .andExpect(jsonPath("$.data.nextStepType").value("SUBMIT_FEEDBACK"))
                 .andExpect(jsonPath("$.data.chapterStatus").value("IN_PROGRESS"));
     }
@@ -282,7 +291,7 @@ class ChapterControllerTest {
         result.setDemoGuideContent("AI demo content");
         result.setGeneratedByAi(true);
         result.setProvider("deepseek");
-        when(aiMaterialService.generateChapterMaterials(any(), any(), any())).thenReturn(result);
+        when(aiMaterialService.generateChapterMaterials(org.mockito.ArgumentMatchers.anyLong(), any(), any(), any())).thenReturn(result);
     }
 
     private void mockAiEvaluationService() {
@@ -293,6 +302,6 @@ class ChapterControllerTest {
         result.setShouldReview(false);
         result.setGeneratedByAi(true);
         result.setProvider("deepseek");
-        when(aiEvaluationService.evaluateDemoSubmission(any(), any(), any(), any(), any(), any())).thenReturn(result);
+        when(aiEvaluationService.evaluateDemoSubmission(org.mockito.ArgumentMatchers.anyLong(), any(), any(), any(), any(), any(), any())).thenReturn(result);
     }
 }

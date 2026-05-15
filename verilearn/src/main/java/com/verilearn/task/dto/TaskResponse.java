@@ -17,9 +17,11 @@ public class TaskResponse {
     private Long theoryMaterialId;
     private String theoryFilePath;
     private String theoryContentUrl;
+    private String theoryViewUrl;
     private Long demoMaterialId;
     private String demoFilePath;
     private String demoContentUrl;
+    private String demoViewUrl;
     private LocalDate taskDate;
     private String stepType;
     private Integer stepOrder;
@@ -108,6 +110,14 @@ public class TaskResponse {
         this.theoryContentUrl = theoryContentUrl;
     }
 
+    public String getTheoryViewUrl() {
+        return theoryViewUrl;
+    }
+
+    public void setTheoryViewUrl(String theoryViewUrl) {
+        this.theoryViewUrl = theoryViewUrl;
+    }
+
     public Long getDemoMaterialId() {
         return demoMaterialId;
     }
@@ -130,6 +140,14 @@ public class TaskResponse {
 
     public void setDemoContentUrl(String demoContentUrl) {
         this.demoContentUrl = demoContentUrl;
+    }
+
+    public String getDemoViewUrl() {
+        return demoViewUrl;
+    }
+
+    public void setDemoViewUrl(String demoViewUrl) {
+        this.demoViewUrl = demoViewUrl;
     }
 
     public LocalDate getTaskDate() {

@@ -1,8 +1,8 @@
 package com.verilearn.ai.service.impl;
 
 import com.verilearn.ai.dto.AiValidationItemDraft;
+import com.verilearn.ai.service.AiRoutingService;
 import com.verilearn.ai.service.AiValidationService;
-import com.verilearn.ai.service.DeepSeekChatClient;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -11,50 +11,56 @@ import java.util.List;
 @Service
 public class DeepSeekAiValidationServiceImpl implements AiValidationService {
 
-    private final DeepSeekChatClient deepSeekChatClient;
+    private final AiRoutingService aiRoutingService;
 
-    public DeepSeekAiValidationServiceImpl(DeepSeekChatClient deepSeekChatClient) {
-        this.deepSeekChatClient = deepSeekChatClient;
+    public DeepSeekAiValidationServiceImpl(AiRoutingService aiRoutingService) {
+        this.aiRoutingService = aiRoutingService;
     }
 
     @Override
-    public List<AiValidationItemDraft> generateValidationItems(String topic, String chapterTitle, String nodeName, String stepType) {
-        String content = deepSeekChatClient.chat(
-                "You are a Java backend learning coach. Output concise Chinese validation items.",
+    public List<AiValidationItemDraft> generateValidationItems(Long userId, String topic, String chapterTitle, String nodeName, String stepType) {
+        String content = aiRoutingService.chatForUser(
+                userId,
+                "You generate concise validation items for Java backend self-learning.",
                 buildPrompt(topic, chapterTitle, nodeName, stepType)
         );
         if (content == null || content.isBlank()) {
             return fallback(nodeName, stepType);
         }
 
-        List<AiValidationItemDraft> parsed = parse(content, nodeName, stepType);
+        List<AiValidationItemDraft> parsed = parse(content, stepType);
         return parsed.isEmpty() ? fallback(nodeName, stepType) : parsed;
     }
 
     private String buildPrompt(String topic, String chapterTitle, String nodeName, String stepType) {
         return """
-                请为一个 Java 后端学习章节生成 2 道中文验证题。
+                Generate 2 short Chinese validation items for a Java backend self-study chapter.
+                Topic: %s
+                Chapter: %s
+                Knowledge point: %s
+                Step type: %s
 
-                学习主题：%s
-                当前章节：%s
-                知识点：%s
-                当前步骤：%s
+                Output format:
+                [ITEM]
+                type=item type
+                difficulty=difficulty
+                question=question text
+                answer=answer key
 
-                你必须严格按下面格式输出：
                 [ITEM]
-                type=题目类型
-                difficulty=难度
-                question=题目内容
-                answer=答案要点
-                [ITEM]
-                type=题目类型
-                difficulty=难度
-                question=题目内容
-                answer=答案要点
-                """.formatted(topic, chapterTitle, nodeName, stepType == null ? "READ_THEORY" : stepType);
+                type=item type
+                difficulty=difficulty
+                question=question text
+                answer=answer key
+                """.formatted(
+                topic,
+                chapterTitle,
+                nodeName,
+                stepType == null ? "READ_THEORY" : stepType
+        );
     }
 
-    private List<AiValidationItemDraft> parse(String content, String nodeName, String stepType) {
+    private List<AiValidationItemDraft> parse(String content, String stepType) {
         String[] sections = content.split("\\[ITEM\\]");
         List<AiValidationItemDraft> items = new ArrayList<>();
         for (String section : sections) {
@@ -85,7 +91,7 @@ public class DeepSeekAiValidationServiceImpl implements AiValidationService {
                     item.setDifficultyLevel("BASIC");
                 }
                 if (item.getAnswerKey() == null || item.getAnswerKey().isBlank()) {
-                    item.setAnswerKey("请围绕 " + nodeName + " 给出关键解释。");
+                    item.setAnswerKey("Explain the key point clearly.");
                 }
                 items.add(item);
             }
@@ -98,26 +104,26 @@ public class DeepSeekAiValidationServiceImpl implements AiValidationService {
         items.add(buildFallbackItem(
                 defaultItemType(stepType, 0),
                 "BASIC",
-                "请用自己的话解释 " + nodeName + " 的核心作用。",
-                "应说明 " + nodeName + " 解决了什么问题，以及为什么需要它。"
+                "Explain the core role of " + nodeName + " in your own words.",
+                "Should explain what problem it solves and why it is needed."
         ));
         items.add(buildFallbackItem(
                 defaultItemType(stepType, 1),
                 "BASIC",
                 fallbackSecondQuestion(nodeName, stepType),
-                "应结合当前章节给出具体例子、现象或总结。"
+                "Should provide one concrete example, observation, or summary."
         ));
         return items;
     }
 
     private String fallbackSecondQuestion(String nodeName, String stepType) {
         if ("RUN_DEMO".equals(stepType)) {
-            return "请结合 Demo 描述 " + nodeName + " 的一个实际现象，并说明它为什么会这样。";
+            return "Describe one concrete demo behavior related to " + nodeName + " and explain why it happened.";
         }
         if ("SUBMIT_FEEDBACK".equals(stepType)) {
-            return "请总结 " + nodeName + " 中你最容易混淆的部分，并说明你准备如何复习。";
+            return "Summarize which part of " + nodeName + " still feels weak and how you will review it.";
         }
-        return "请给出 " + nodeName + " 的一个实际使用场景。";
+        return "Give one practical usage scenario for " + nodeName + ".";
     }
 
     private String defaultItemType(String stepType, int index) {

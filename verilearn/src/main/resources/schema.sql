@@ -28,6 +28,20 @@ CREATE TABLE IF NOT EXISTS learning_goal (
     updated_at DATETIME NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS learner_ai_provider_config (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    provider_type VARCHAR(40) NOT NULL,
+    base_url VARCHAR(255) NOT NULL,
+    model_name VARCHAR(100) NOT NULL,
+    api_key_ciphertext TEXT NOT NULL,
+    api_key_masked VARCHAR(64) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    is_active TINYINT(1) NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS knowledge_node (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     user_id BIGINT NOT NULL,

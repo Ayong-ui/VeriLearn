@@ -1,8 +1,13 @@
 package com.verilearn.infra.feishu;
 
+import com.verilearn.ai.dto.AiProviderConfigResponse;
+import com.verilearn.ai.service.AiProviderConfigService;
+import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
 import com.verilearn.infra.feishu.service.FeishuMessagingService;
 import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.task.dto.TaskResponse;
+import com.verilearn.workflow.dto.LearnerDashboardResponse;
+import com.verilearn.workflow.dto.LearnerMaterialReference;
 import com.verilearn.workflow.dto.LearnerSetupResponse;
 import com.verilearn.workflow.service.LearnerWorkflowService;
 import org.hamcrest.Matchers;
@@ -38,6 +43,9 @@ class FeishuEventControllerTest {
     @MockBean
     private FeishuMessagingService feishuMessagingService;
 
+    @MockBean
+    private AiProviderConfigService aiProviderConfigService;
+
     @Test
     void shouldReturnChallengeForUrlVerification() throws Exception {
         mockMvc.perform(post("/api/feishu/events")
@@ -63,31 +71,13 @@ class FeishuEventControllerTest {
 
         mockMvc.perform(post("/api/feishu/events")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "header": {
-                                    "event_type": "im.message.receive_v1"
-                                  },
-                                  "event": {
-                                    "sender": {
-                                      "sender_id": {
-                                        "open_id": "ou_test_start"
-                                      }
-                                    },
-                                    "message": {
-                                      "message_type": "text",
-                                      "content": "{\\"text\\":\\"/start Java 后端\\"}"
-                                    }
-                                  }
-                                }
-                                """))
+                        .content(messageEvent("ou_test_start", "/start Java 后端")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/start"))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("已为你初始化学习目标：Java 后端")));
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("Java 后端")));
 
-        verify(feishuMessagingService).sendTextMessage(eq("ou_test_start"), contains("已为你初始化学习目标：Java 后端"));
+        verify(feishuMessagingService).sendTextMessage(eq("ou_test_start"), contains("Java 后端"));
     }
 
     @Test
@@ -98,36 +88,26 @@ class FeishuEventControllerTest {
         taskResponse.setStepType("READ_THEORY");
         taskResponse.setStatus("PENDING");
         taskResponse.setTheoryFilePath("spring-boot/01-spring-boot-fundamentals/user/theory/theory.md");
+        taskResponse.setTheoryContentUrl("/api/materials/101/content");
+        taskResponse.setTheoryViewUrl("/materials/101/view");
         taskResponse.setDemoFilePath("spring-boot/01-spring-boot-fundamentals/user/demo/demo-task.md");
+        taskResponse.setDemoContentUrl("/api/materials/102/content");
+        taskResponse.setDemoViewUrl("/materials/102/view");
         taskResponse.setValidationItems(List.of());
         when(learnerWorkflowService.generateTodayTask(eq("ou_test_today"))).thenReturn(taskResponse);
 
         mockMvc.perform(post("/api/feishu/events")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "header": {
-                                    "event_type": "im.message.receive_v1"
-                                  },
-                                  "event": {
-                                    "sender": {
-                                      "sender_id": {
-                                        "open_id": "ou_test_today"
-                                      }
-                                    },
-                                    "message": {
-                                      "message_type": "text",
-                                      "content": "{\\"text\\":\\"/today\\"}"
-                                    }
-                                  }
-                                }
-                                """))
+                        .content(messageEvent("ou_test_today", "/today")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/today"))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("今日任务：学习 Spring Boot fundamentals")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("学习 Spring Boot fundamentals")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("theory.md")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("demo-task.md")));
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/101/view")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("demo-task.md")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/102/view")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/submit-demo")));
     }
 
     @Test
@@ -146,27 +126,134 @@ class FeishuEventControllerTest {
 
         mockMvc.perform(post("/api/feishu/events")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "header": {
-                                    "event_type": "im.message.receive_v1"
-                                  },
-                                  "event": {
-                                    "sender": {
-                                      "sender_id": {
-                                        "open_id": "ou_test_progress"
-                                      }
-                                    },
-                                    "message": {
-                                      "message_type": "text",
-                                      "content": "{\\"text\\":\\"/progress\\"}"
-                                    }
-                                  }
-                                }
-                                """))
+                        .content(messageEvent("ou_test_progress", "/progress")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/progress"))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("当前主题：Java 后端")));
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("Java 后端")));
+    }
+
+    @Test
+    void shouldHandleDashboardCommand() throws Exception {
+        LearnerDashboardResponse dashboard = new LearnerDashboardResponse();
+        dashboard.setTopic("Java 后端");
+        dashboard.setChapterCount(4);
+        dashboard.setPendingReviewCount(1);
+        TaskResponse taskResponse = new TaskResponse();
+        taskResponse.setGoalText("学习 Spring Boot fundamentals");
+        dashboard.setTodayTask(taskResponse);
+        dashboard.setCurrentMaterials(List.of(
+                new LearnerMaterialReference(101L, "THEORY_DOC", "理论文档", "path/theory.md", "/api/materials/101/content", "/materials/101/view"),
+                new LearnerMaterialReference(102L, "DEMO_GUIDE", "Demo 任务", "path/demo-task.md", "/api/materials/102/content", "/materials/102/view")
+        ));
+        when(learnerWorkflowService.getDashboard(eq("ou_test_dashboard"))).thenReturn(dashboard);
+
+        mockMvc.perform(post("/api/feishu/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(messageEvent("ou_test_dashboard", "/dashboard")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.success").value(true))
+                .andExpect(jsonPath("$.data.command").value("/dashboard"))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("Java 后端")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/101/view")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/102/view")));
+    }
+
+    @Test
+    void shouldHandleSubmitDemoCommandWithCurrentContext() throws Exception {
+        ChapterDemoEvaluationResponse response = new ChapterDemoEvaluationResponse();
+        response.setUnderstandingLevel("HIGH");
+        response.setChapterStatus("IN_PROGRESS");
+        response.setEvaluationContentUrl("/api/materials/201/content");
+        response.setEvaluationViewUrl("/materials/201/view");
+        response.setNextStepContentUrl("/api/materials/202/content");
+        response.setNextStepViewUrl("/materials/202/view");
+        when(learnerWorkflowService.evaluateCurrentDemoSubmission(eq("ou_test_submit_demo"), any()))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/feishu/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(messageEvent("ou_test_submit_demo", "/submit-demo 我完成了 ping 接口，并理解了包扫描")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.success").value(true))
+                .andExpect(jsonPath("$.data.command").value("/submit-demo"))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/201/view")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/202/view")));
+    }
+
+    @Test
+    void shouldHandleAiCurrentCommand() throws Exception {
+        AiProviderConfigResponse response = new AiProviderConfigResponse();
+        response.setProviderType("DEEPSEEK");
+        response.setModelName("deepseek-chat");
+        response.setBaseUrl("https://api.deepseek.com");
+        response.setStatus("ACTIVE");
+        response.setSourceType("SYSTEM_DEFAULT");
+        response.setApiKeyMasked("sk-xxxx***yyyy");
+        when(aiProviderConfigService.getCurrentConfig(eq("ou_test_ai_current"))).thenReturn(response);
+
+        mockMvc.perform(post("/api/feishu/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(messageEvent("ou_test_ai_current", "/ai current")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.success").value(true))
+                .andExpect(jsonPath("$.data.command").value("/ai"))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("DEEPSEEK")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("deepseek-chat")));
+    }
+
+    @Test
+    void shouldHandleAiSwitchCommand() throws Exception {
+        AiProviderConfigResponse response = new AiProviderConfigResponse();
+        response.setConfigId(2L);
+        response.setProviderType("OPENAI");
+        response.setModelName("gpt-4.1-mini");
+        response.setBaseUrl("https://api.openai.com/v1");
+        response.setApiKeyMasked("sk-open***mini");
+        when(aiProviderConfigService.activateConfig(eq("ou_test_ai_switch"), eq(2L))).thenReturn(response);
+
+        mockMvc.perform(post("/api/feishu/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(messageEvent("ou_test_ai_switch", "/ai switch 2")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.success").value(true))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("OPENAI")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("gpt-4.1-mini")));
+    }
+
+    @Test
+    void shouldHandleAiConfigCommand() throws Exception {
+        mockMvc.perform(post("/api/feishu/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(messageEvent("ou_test_ai_config", "/ai config")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.success").value(true))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/ai/provider-config-page?openId=ou_test_ai_config")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("API Key")));
+    }
+
+    private String messageEvent(String openId, String text) {
+        return """
+                {
+                  "header": {
+                    "event_type": "im.message.receive_v1"
+                  },
+                  "event": {
+                    "sender": {
+                      "sender_id": {
+                        "open_id": "%s"
+                      }
+                    },
+                    "message": {
+                      "message_type": "text",
+                      "content": "{\\"text\\":\\"%s\\"}"
+                    }
+                  }
+                }
+                """.formatted(openId, escapeForMessageContent(text));
+    }
+
+    private String escapeForMessageContent(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

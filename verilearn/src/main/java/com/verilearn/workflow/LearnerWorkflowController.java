@@ -8,6 +8,7 @@ import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.task.dto.TaskResponse;
 import com.verilearn.workflow.dto.LearnerCurrentContextResponse;
 import com.verilearn.workflow.dto.LearnerDashboardResponse;
+import com.verilearn.workflow.dto.LearnerDemoSubmissionRequest;
 import com.verilearn.workflow.dto.LearnerSetupRequest;
 import com.verilearn.workflow.dto.LearnerSetupResponse;
 import com.verilearn.workflow.service.LearnerWorkflowService;
@@ -70,6 +71,29 @@ public class LearnerWorkflowController {
         return ApiResponse.success(
                 "learner demo evaluated successfully",
                 learnerWorkflowService.evaluateDemoSubmission(feishuOpenId, chapterId, request)
+        );
+    }
+
+    @PostMapping("/{feishuOpenId}/chapters/{chapterId}/demo-feedback")
+    public ApiResponse<ChapterDemoEvaluationResponse> evaluateCurrentDemoSubmission(
+            @PathVariable String feishuOpenId,
+            @PathVariable Long chapterId,
+            @Valid @RequestBody LearnerDemoSubmissionRequest request
+    ) {
+        return ApiResponse.success(
+                "learner current demo evaluated successfully",
+                learnerWorkflowService.evaluateCurrentDemoSubmission(feishuOpenId, chapterId, request)
+        );
+    }
+
+    @PostMapping("/{feishuOpenId}/demo-feedback/current")
+    public ApiResponse<ChapterDemoEvaluationResponse> evaluateCurrentDemoSubmission(
+            @PathVariable String feishuOpenId,
+            @Valid @RequestBody LearnerDemoSubmissionRequest request
+    ) {
+        return ApiResponse.success(
+                "learner current demo evaluated successfully",
+                learnerWorkflowService.evaluateCurrentDemoSubmission(feishuOpenId, request)
         );
     }
 }

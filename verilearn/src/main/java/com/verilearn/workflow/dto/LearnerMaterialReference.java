@@ -7,16 +7,18 @@ public class LearnerMaterialReference {
     private String displayName;
     private String filePath;
     private String contentUrl;
+    private String viewUrl;
 
     public LearnerMaterialReference() {
     }
 
-    public LearnerMaterialReference(Long materialId, String materialType, String displayName, String filePath, String contentUrl) {
+    public LearnerMaterialReference(Long materialId, String materialType, String displayName, String filePath, String contentUrl, String viewUrl) {
         this.materialId = materialId;
         this.materialType = materialType;
         this.displayName = displayName;
         this.filePath = filePath;
         this.contentUrl = contentUrl;
+        this.viewUrl = viewUrl;
     }
 
     public Long getMaterialId() {
@@ -57,5 +59,13 @@ public class LearnerMaterialReference {
 
     public void setContentUrl(String contentUrl) {
         this.contentUrl = contentUrl;
+    }
+
+    public String getViewUrl() {
+        return viewUrl;
+    }
+
+    public void setViewUrl(String viewUrl) {
+        this.viewUrl = viewUrl;
     }
 }

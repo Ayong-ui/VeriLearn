@@ -32,6 +32,16 @@ public class FeishuCardController {
         return ApiResponse.success("dashboard card generated successfully", feishuCardService.buildDashboardCard(openId));
     }
 
+    @GetMapping("/learners/{openId}/current-context")
+    public ApiResponse<FeishuCardPreviewResponse> previewCurrentContextCard(@PathVariable String openId) {
+        return ApiResponse.success("current context card generated successfully", feishuCardService.buildCurrentContextCard(openId));
+    }
+
+    @GetMapping("/learners/{openId}/ai-provider")
+    public ApiResponse<FeishuCardPreviewResponse> previewAiProviderCard(@PathVariable String openId) {
+        return ApiResponse.success("ai provider card generated successfully", feishuCardService.buildAiProviderCard(openId));
+    }
+
     @PostMapping("/callbacks")
     public ApiResponse<FeishuCardActionResponse> handleCardCallback(@RequestBody FeishuCardActionRequest request) {
         return ApiResponse.success("feishu card callback handled successfully", feishuCardService.handleCardAction(request));
