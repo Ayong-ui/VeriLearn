@@ -7,6 +7,7 @@ import com.verilearn.chapter.dto.ChapterDemoEvaluationRequest;
 import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
 import com.verilearn.workflow.dto.LearnerCurrentContextResponse;
 import com.verilearn.workflow.dto.LearnerDashboardResponse;
+import com.verilearn.workflow.dto.LearnerDemoSubmissionRequest;
 import com.verilearn.workflow.dto.LearnerSetupRequest;
 import com.verilearn.workflow.dto.LearnerSetupResponse;
 
@@ -27,4 +28,8 @@ public interface LearnerWorkflowService {
     LearnerCurrentContextResponse getCurrentContext(String feishuOpenId);
 
     ChapterDemoEvaluationResponse evaluateDemoSubmission(String feishuOpenId, Long chapterId, ChapterDemoEvaluationRequest request);
+
+    ChapterDemoEvaluationResponse evaluateCurrentDemoSubmission(String feishuOpenId, LearnerDemoSubmissionRequest request);
+
+    ChapterDemoEvaluationResponse evaluateCurrentDemoSubmission(String feishuOpenId, Long chapterId, LearnerDemoSubmissionRequest request);
 }

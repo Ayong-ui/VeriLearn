@@ -6,5 +6,5 @@ import java.util.List;
 
 public interface AiValidationService {
 
-    List<AiValidationItemDraft> generateValidationItems(String topic, String chapterTitle, String nodeName, String stepType);
+    List<AiValidationItemDraft> generateValidationItems(Long userId, String topic, String chapterTitle, String nodeName, String stepType);
 }

@@ -17,9 +17,11 @@ public class LearnerCurrentContextResponse {
     private Long evaluationMaterialId;
     private String evaluationFilePath;
     private String evaluationContentUrl;
+    private String evaluationViewUrl;
     private Long nextStepMaterialId;
     private String nextStepFilePath;
     private String nextStepContentUrl;
+    private String nextStepViewUrl;
     private List<LearnerMaterialReference> currentMaterials;
 
     public Long getUserId() {
@@ -102,6 +104,14 @@ public class LearnerCurrentContextResponse {
         this.evaluationContentUrl = evaluationContentUrl;
     }
 
+    public String getEvaluationViewUrl() {
+        return evaluationViewUrl;
+    }
+
+    public void setEvaluationViewUrl(String evaluationViewUrl) {
+        this.evaluationViewUrl = evaluationViewUrl;
+    }
+
     public Long getNextStepMaterialId() {
         return nextStepMaterialId;
     }
@@ -124,6 +134,14 @@ public class LearnerCurrentContextResponse {
 
     public void setNextStepContentUrl(String nextStepContentUrl) {
         this.nextStepContentUrl = nextStepContentUrl;
+    }
+
+    public String getNextStepViewUrl() {
+        return nextStepViewUrl;
+    }
+
+    public void setNextStepViewUrl(String nextStepViewUrl) {
+        this.nextStepViewUrl = nextStepViewUrl;
     }
 
     public List<LearnerMaterialReference> getCurrentMaterials() {

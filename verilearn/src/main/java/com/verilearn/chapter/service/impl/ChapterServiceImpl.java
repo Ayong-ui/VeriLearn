@@ -36,6 +36,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class ChapterServiceImpl implements ChapterService {
@@ -49,6 +50,8 @@ public class ChapterServiceImpl implements ChapterService {
     private static final String REVIEW_NOT_READY = "NOT_READY";
     private static final String REVIEW_PENDING = "PENDING";
     private static final String REVIEWED = "REVIEWED";
+    private static final String MATERIAL_CONTENT_URL_TEMPLATE = "/api/materials/%d/content";
+    private static final String MATERIAL_VIEW_URL_TEMPLATE = "/materials/%d/view";
 
     private final LearningGoalMapper learningGoalMapper;
     private final KnowledgeNodeMapper knowledgeNodeMapper;
@@ -113,7 +116,9 @@ public class ChapterServiceImpl implements ChapterService {
             learningChapterMapper.insert(chapter);
 
             createDefaultSteps(chapter, node.getNodeName(), now);
-            createDefaultMaterials(goal.getTopic(), chapter, node.getNodeName(), now);
+            if (chapter.getChapterNo() == 1) {
+                createDefaultMaterials(goal.getTopic(), chapter, node.getNodeName(), now);
+            }
             createReviewRecord(chapter.getId(), now);
         }
 
@@ -274,19 +279,29 @@ public class ChapterServiceImpl implements ChapterService {
         LearningGoal goal = getGoalOrThrow(chapter.getGoalId());
 
         AiChapterMaterialResult materialResult = aiMaterialService.generateChapterMaterials(
+                goal.getUserId(),
                 goal.getTopic(),
                 chapter.getTitle(),
                 findCurrentStepType(chapterId)
         );
 
-        List<ChapterMaterial> materials = listMaterials(chapterId);
-        if (materials.isEmpty()) {
-            throw new IllegalArgumentException("chapter materials not found");
-        }
-
         LocalDateTime now = LocalDateTime.now();
-        updateMaterial(goal.getTopic(), chapter, materials, "THEORY_DOC", materialResult.getTheoryContent(), materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY", now);
-        updateMaterial(goal.getTopic(), chapter, materials, "DEMO_GUIDE", materialResult.getDemoGuideContent(), materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY", now);
+        upsertMaterial(
+                goal.getTopic(),
+                chapter,
+                "THEORY_DOC",
+                materialResult.getTheoryContent(),
+                materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
+                now
+        );
+        upsertMaterial(
+                goal.getTopic(),
+                chapter,
+                "DEMO_GUIDE",
+                materialResult.getDemoGuideContent(),
+                materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
+                now
+        );
 
         if (materialResult.getSummary() != null && !materialResult.getSummary().isBlank()) {
             chapter.setSummary(materialResult.getSummary());
@@ -308,9 +323,64 @@ public class ChapterServiceImpl implements ChapterService {
         response.setMaterialId(material.getId());
         response.setMaterialType(material.getMaterialType());
         response.setFilePath(material.getFilePath());
+        response.setViewUrl(materialViewUrl(material.getId()));
         response.setContentText(chapterMaterialStorageService.readMaterialContent(material.getFilePath(), material.getContentText()));
         response.setStatus(material.getStatus());
         return response;
+    }
+
+    @Override
+    public String getMaterialViewHtml(Long materialId) {
+        ChapterMaterialContentResponse material = getMaterialContent(materialId);
+        return """
+                <!DOCTYPE html>
+                <html lang="zh-CN">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>%s</title>
+                    <style>
+                        body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fb; color: #1f2937; }
+                        .container { max-width: 980px; margin: 40px auto; padding: 0 20px; }
+                        .header { background: #ffffff; border: 1px solid #dbe4f0; border-radius: 18px; padding: 24px 28px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06); }
+                        .badge { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: 13px; font-weight: 600; }
+                        h1 { margin: 16px 0 10px; font-size: 30px; }
+                        .meta { margin: 6px 0; color: #4b5563; font-size: 14px; }
+                        .links { margin-top: 18px; display: flex; gap: 12px; flex-wrap: wrap; }
+                        .links a { text-decoration: none; color: #ffffff; background: #2563eb; padding: 10px 14px; border-radius: 10px; font-size: 14px; }
+                        .links a.secondary { background: #0f172a; }
+                        .content { margin-top: 24px; background: #ffffff; border: 1px solid #dbe4f0; border-radius: 18px; padding: 28px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06); }
+                        pre { margin: 0; white-space: pre-wrap; word-break: break-word; line-height: 1.72; font-size: 15px; font-family: "JetBrains Mono", "Cascadia Code", "Consolas", "Microsoft YaHei", monospace; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <section class="header">
+                            <span class="badge">%s</span>
+                            <h1>%s</h1>
+                            <div class="meta">文件路径：%s</div>
+                            <div class="meta">状态：%s</div>
+                            <div class="links">
+                                <a href="%s">查看 JSON 内容接口</a>
+                                <a class="secondary" href="%s">刷新当前页面</a>
+                            </div>
+                        </section>
+                        <section class="content">
+                            <pre>%s</pre>
+                        </section>
+                    </div>
+                </body>
+                </html>
+                """.formatted(
+                escapeHtml(resolveMaterialDisplayName(material.getMaterialType())),
+                escapeHtml(material.getMaterialType()),
+                escapeHtml(resolveMaterialDisplayName(material.getMaterialType())),
+                escapeHtml(Objects.toString(material.getFilePath(), "")),
+                escapeHtml(Objects.toString(material.getStatus(), "")),
+                materialContentUrl(materialId),
+                materialViewUrl(materialId),
+                escapeHtml(Objects.toString(material.getContentText(), ""))
+        );
     }
 
     @Override
@@ -332,6 +402,7 @@ public class ChapterServiceImpl implements ChapterService {
         ChapterMaterial demoMaterial = findMaterial(chapterId, "DEMO_GUIDE");
         String demoGuide = demoMaterial == null ? step.getInstructionText() : chapterMaterialStorageService.readMaterialContent(demoMaterial.getFilePath(), demoMaterial.getContentText());
         AiDemoEvaluationResult evaluation = aiEvaluationService.evaluateDemoSubmission(
+                goal.getUserId(),
                 goal.getTopic(),
                 chapter.getTitle(),
                 demoGuide,
@@ -378,8 +449,12 @@ public class ChapterServiceImpl implements ChapterService {
         response.setUnderstandingLevel(evaluation.getUnderstandingLevel());
         response.setEvaluationMaterialId(evaluationMaterial.getId());
         response.setEvaluationFilePath(evaluationMaterial.getFilePath());
+        response.setEvaluationContentUrl(materialContentUrl(evaluationMaterial.getId()));
+        response.setEvaluationViewUrl(materialViewUrl(evaluationMaterial.getId()));
         response.setNextStepMaterialId(nextStepMaterial.getId());
         response.setNextStepFilePath(nextStepMaterial.getFilePath());
+        response.setNextStepContentUrl(materialContentUrl(nextStepMaterial.getId()));
+        response.setNextStepViewUrl(materialViewUrl(nextStepMaterial.getId()));
 
         if (nextStep != null) {
             nextStep.setStatus(STEP_IN_PROGRESS);
@@ -413,6 +488,33 @@ public class ChapterServiceImpl implements ChapterService {
                 "Run the demo or exercise and compare the result with the expected behavior.", now);
         insertStep(chapter.getId(), 3, "SUBMIT_FEEDBACK", "Submit your feedback for " + chapterTitle,
                 "Describe what you understood, what was unclear, and whether review is needed.", now);
+    }
+
+    private String resolveMaterialDisplayName(String materialType) {
+        return switch (materialType) {
+            case "THEORY_DOC" -> "\u7406\u8bba\u6587\u6863";
+            case "DEMO_GUIDE" -> "Demo \u4efb\u52a1";
+            case "EVALUATION_REPORT" -> "\u8bc4\u4f30\u62a5\u544a";
+            case "NEXT_STEP_NOTE" -> "\u4e0b\u4e00\u6b65\u5efa\u8bae";
+            default -> materialType;
+        };
+    }
+
+    private String materialContentUrl(Long materialId) {
+        return MATERIAL_CONTENT_URL_TEMPLATE.formatted(materialId);
+    }
+
+    private String materialViewUrl(Long materialId) {
+        return MATERIAL_VIEW_URL_TEMPLATE.formatted(materialId);
+    }
+
+    private String escapeHtml(String value) {
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private void createDefaultMaterials(String goalTopic, LearningChapter chapter, String chapterTitle, LocalDateTime now) {

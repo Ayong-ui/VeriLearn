@@ -69,6 +69,9 @@ public class FeishuCardActionRequest {
         @JsonProperty("task_id")
         private Long taskId;
 
+        @JsonProperty("config_id")
+        private Long configId;
+
         public String getActionName() {
             return actionName;
         }
@@ -83,6 +86,14 @@ public class FeishuCardActionRequest {
 
         public void setTaskId(Long taskId) {
             this.taskId = taskId;
+        }
+
+        public Long getConfigId() {
+            return configId;
+        }
+
+        public void setConfigId(Long configId) {
+            this.configId = configId;
         }
     }
 }

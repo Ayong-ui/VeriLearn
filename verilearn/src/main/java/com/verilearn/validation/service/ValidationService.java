@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface ValidationService {
 
-    List<ValidationItemResponse> initializeValidationItems(Long taskId, Long nodeId, String nodeName, String stepType);
+    List<ValidationItemResponse> initializeValidationItems(Long taskId, Long nodeId, Long goalId, String nodeName, String stepType);
 
     List<ValidationItemResponse> listValidationItems(Long taskId);
 

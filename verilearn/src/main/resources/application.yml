@@ -15,16 +15,23 @@ server:
 
 verilearn:
   ai:
+    provider-type: ${VERILEARN_AI_PROVIDER_TYPE:DEEPSEEK}
     base-url: ${VERILEARN_AI_BASE_URL:https://api.deepseek.com}
     api-key: ${VERILEARN_AI_API_KEY:}
     model: ${VERILEARN_AI_MODEL:deepseek-chat}
+    security:
+      master-key: ${VERILEARN_SECRET_MASTER_KEY:verilearn-local-master-key}
   feishu:
+    mode: ${VERILEARN_FEISHU_MODE:LONG_CONNECTION}
     base-url: ${VERILEARN_FEISHU_BASE_URL:https://open.feishu.cn/open-apis}
     app-id: ${VERILEARN_FEISHU_APP_ID:}
     app-secret: ${VERILEARN_FEISHU_APP_SECRET:}
     verification-token: ${VERILEARN_FEISHU_VERIFICATION_TOKEN:}
+    encrypt-key: ${VERILEARN_FEISHU_ENCRYPT_KEY:}
+    long-connection-enabled: ${VERILEARN_FEISHU_LONG_CONNECTION_ENABLED:false}
   schedule:
     daily-task-cron: "0 0 8 * * ?"
+    review-reminder-cron: "0 0 20 * * ?"
   storage:
     learning-space-root: ${VERILEARN_LEARNING_SPACE_ROOT:${user.dir}/learning-space}
 

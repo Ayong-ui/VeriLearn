@@ -5,10 +5,21 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "verilearn.feishu")
 public class FeishuProperties {
 
+    private String mode;
     private String baseUrl;
     private String appId;
     private String appSecret;
     private String verificationToken;
+    private String encryptKey;
+    private boolean longConnectionEnabled;
+
+    public String getMode() {
+        return mode;
+    }
+
+    public void setMode(String mode) {
+        this.mode = mode;
+    }
 
     public String getBaseUrl() {
         return baseUrl;
@@ -40,5 +51,25 @@ public class FeishuProperties {
 
     public void setVerificationToken(String verificationToken) {
         this.verificationToken = verificationToken;
+    }
+
+    public String getEncryptKey() {
+        return encryptKey;
+    }
+
+    public void setEncryptKey(String encryptKey) {
+        this.encryptKey = encryptKey;
+    }
+
+    public boolean isLongConnectionEnabled() {
+        return longConnectionEnabled;
+    }
+
+    public void setLongConnectionEnabled(boolean longConnectionEnabled) {
+        this.longConnectionEnabled = longConnectionEnabled;
+    }
+
+    public boolean isLongConnectionMode() {
+        return "LONG_CONNECTION".equalsIgnoreCase(mode);
     }
 }

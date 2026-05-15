@@ -39,6 +39,8 @@ public class TaskServiceImpl implements TaskService {
     private static final String COMPLETED_STATUS = "COMPLETED";
     private static final String MATERIAL_THEORY_DOC = "THEORY_DOC";
     private static final String MATERIAL_DEMO_GUIDE = "DEMO_GUIDE";
+    private static final String MATERIAL_CONTENT_URL_TEMPLATE = "/api/materials/%d/content";
+    private static final String MATERIAL_VIEW_URL_TEMPLATE = "/materials/%d/view";
 
     private final LearningGoalMapper learningGoalMapper;
     private final KnowledgeNodeMapper knowledgeNodeMapper;
@@ -325,7 +327,7 @@ public class TaskServiceImpl implements TaskService {
         response.setGoalText(task.getGoalText());
         response.setStudyMaterial(task.getStudyMaterial());
         response.setStatus(task.getStatus());
-        response.setValidationItems(validationService.initializeValidationItems(task.getId(), node.getId(), node.getNodeName(), task.getStepType()));
+        response.setValidationItems(validationService.initializeValidationItems(task.getId(), node.getId(), node.getGoalId(), node.getNodeName(), task.getStepType()));
         return response;
     }
 
@@ -348,7 +350,8 @@ public class TaskServiceImpl implements TaskService {
                 .ifPresent(material -> {
                     response.setTheoryMaterialId(material.getId());
                     response.setTheoryFilePath(material.getFilePath());
-                    response.setTheoryContentUrl("/api/materials/" + material.getId() + "/content");
+                    response.setTheoryContentUrl(MATERIAL_CONTENT_URL_TEMPLATE.formatted(material.getId()));
+                    response.setTheoryViewUrl(MATERIAL_VIEW_URL_TEMPLATE.formatted(material.getId()));
                 });
 
         materials.stream()
@@ -357,7 +360,8 @@ public class TaskServiceImpl implements TaskService {
                 .ifPresent(material -> {
                     response.setDemoMaterialId(material.getId());
                     response.setDemoFilePath(material.getFilePath());
-                    response.setDemoContentUrl("/api/materials/" + material.getId() + "/content");
+                    response.setDemoContentUrl(MATERIAL_CONTENT_URL_TEMPLATE.formatted(material.getId()));
+                    response.setDemoViewUrl(MATERIAL_VIEW_URL_TEMPLATE.formatted(material.getId()));
                 });
     }
 

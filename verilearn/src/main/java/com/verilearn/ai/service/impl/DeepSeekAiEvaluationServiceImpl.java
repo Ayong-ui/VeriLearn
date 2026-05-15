@@ -2,7 +2,7 @@ package com.verilearn.ai.service.impl;
 
 import com.verilearn.ai.dto.AiDemoEvaluationResult;
 import com.verilearn.ai.service.AiEvaluationService;
-import com.verilearn.ai.service.DeepSeekChatClient;
+import com.verilearn.ai.service.AiRoutingService;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -10,14 +10,15 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
 
     private static final String PROVIDER = "deepseek";
 
-    private final DeepSeekChatClient deepSeekChatClient;
+    private final AiRoutingService aiRoutingService;
 
-    public DeepSeekAiEvaluationServiceImpl(DeepSeekChatClient deepSeekChatClient) {
-        this.deepSeekChatClient = deepSeekChatClient;
+    public DeepSeekAiEvaluationServiceImpl(AiRoutingService aiRoutingService) {
+        this.aiRoutingService = aiRoutingService;
     }
 
     @Override
     public AiDemoEvaluationResult evaluateDemoSubmission(
+            Long userId,
             String topic,
             String chapterTitle,
             String demoGuide,
@@ -25,10 +26,10 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
             String codeSnippet,
             String question
     ) {
-        String prompt = buildPrompt(topic, chapterTitle, demoGuide, submissionSummary, codeSnippet, question);
-        String content = deepSeekChatClient.chat(
-                "You are a Java backend mentor. Evaluate demo submissions in Chinese and return structured sections.",
-                prompt
+        String content = aiRoutingService.chatForUser(
+                userId,
+                "You evaluate Java backend self-study demo submissions.",
+                buildPrompt(topic, chapterTitle, demoGuide, submissionSummary, codeSnippet, question)
         );
         if (content == null || content.isBlank()) {
             return fallback(chapterTitle, submissionSummary, question);
@@ -45,38 +46,37 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
             String question
     ) {
         return """
-                请基于下面的 Java 后端学习场景，评估用户对 Demo 的掌握情况，并严格按固定分段输出。
-
-                学习主题：%s
-                当前章节：%s
-                Demo 指南：
+                Evaluate a Java backend self-study demo submission and answer in Chinese.
+                Topic: %s
+                Chapter: %s
+                Demo guide:
                 %s
 
-                用户提交说明：
+                Learner summary:
                 %s
 
-                用户代码片段：
+                Learner code snippet:
                 %s
 
-                用户问题：
+                Learner question:
                 %s
 
-                输出格式必须严格如下：
+                Output format:
                 [LEVEL]
-                只输出一个：HIGH / MEDIUM / LOW
+                One of HIGH / MEDIUM / LOW
 
                 [EVALUATION]
-                用中文输出 Markdown，包含：
-                1. 本次完成情况
-                2. 用户已经掌握了什么
-                3. 还存在哪些薄弱点
-                4. 是否建议复习
+                Markdown in Chinese:
+                1. Completion status
+                2. What the learner understands
+                3. Weak points
+                4. Whether review is suggested
 
                 [NEXT_STEP]
-                用中文输出 Markdown，告诉用户下一步应该做什么：
-                - 继续下一步
-                - 先补一个更小练习
-                - 先复习本章
+                Markdown in Chinese:
+                - continue
+                - smaller follow-up practice
+                - review this chapter first
                 """.formatted(
                 defaultText(topic),
                 defaultText(chapterTitle),
@@ -109,33 +109,30 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
         AiDemoEvaluationResult result = new AiDemoEvaluationResult();
         result.setUnderstandingLevel("MEDIUM");
         result.setEvaluationMarkdown("""
-                # Demo 评估报告
+                # Demo Evaluation
 
-                - 当前章节：%s
-                - 用户提交说明：%s
-                - 用户问题：%s
+                - Chapter: %s
+                - Learner summary: %s
+                - Learner question: %s
 
-                ## 评估结论
-                你已经完成了一轮 Demo 提交，但目前仍建议你继续补充自己的理解说明，并把关键代码路径解释清楚。
+                ## Conclusion
+                One round of demo feedback has been submitted. A clearer explanation of the key code path is still recommended.
 
-                ## 当前掌握情况
-                - 已经进入了实操阶段
-                - 已经能描述本次 Demo 的完成结果
+                ## Current understanding
+                - The learner has entered the hands-on stage.
+                - The learner can already describe the demo result.
 
-                ## 仍需加强
-                - 需要更明确地说清楚为什么这样实现
-                - 需要结合项目代码解释关键类或关键步骤
-
-                ## 是否建议复习
-                当前先不直接回退复习，建议先看下一步建议并补一轮更具体的说明。
+                ## Weak points
+                - The reason behind the implementation is not fully clear yet.
+                - The learner should connect the explanation to actual project code.
                 """.formatted(defaultText(chapterTitle), defaultText(submissionSummary), defaultText(question)));
         result.setNextStepMarkdown("""
-                # 下一步建议
+                # Next Step
 
-                1. 回到当前章节的 Demo 指南，逐条对照自己是否都完成。
-                2. 用自己的话回答：这个 Demo 解决了什么问题。
-                3. 找到一段最关键的代码，说明它为什么放在这里。
-                4. 完成后再提交一轮反馈，或继续进入章节的下一步。
+                1. Re-check the current demo guide item by item.
+                2. Explain what problem this demo solves.
+                3. Point out the most important code section and explain why it is there.
+                4. Submit one more round of feedback or move to the next chapter step.
                 """);
         result.setShouldReview(false);
         result.setGeneratedByAi(false);
@@ -168,6 +165,6 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
     }
 
     private String defaultText(String value) {
-        return value == null || value.isBlank() ? "无" : value.trim();
+        return value == null || value.isBlank() ? "none" : value.trim();
     }
 }

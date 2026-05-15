@@ -29,6 +29,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
@@ -234,7 +235,7 @@ class ValidationFlowTest {
     @Test
     void shouldRegenerateValidationItemsByAiBeforeSubmission() throws Exception {
         Long taskId = createTaskWithItems();
-        when(aiValidationService.generateValidationItems(anyString(), anyString(), anyString(), isNull()))
+        when(aiValidationService.generateValidationItems(anyLong(), anyString(), anyString(), anyString(), isNull()))
                 .thenReturn(List.of(
                         buildDraft("CONCEPT", "BASIC", "请解释依赖注入是什么。", "应说明控制反转与对象装配。"),
                         buildDraft("APPLICATION", "MEDIUM", "请给出依赖注入在 Spring Boot 中的使用场景。", "应举出 Controller、Service 或配置注入场景。")

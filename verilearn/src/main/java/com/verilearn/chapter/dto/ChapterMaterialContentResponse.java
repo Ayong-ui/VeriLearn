@@ -5,6 +5,7 @@ public class ChapterMaterialContentResponse {
     private Long materialId;
     private String materialType;
     private String filePath;
+    private String viewUrl;
     private String contentText;
     private String status;
 
@@ -30,6 +31,14 @@ public class ChapterMaterialContentResponse {
 
     public void setFilePath(String filePath) {
         this.filePath = filePath;
+    }
+
+    public String getViewUrl() {
+        return viewUrl;
+    }
+
+    public void setViewUrl(String viewUrl) {
+        this.viewUrl = viewUrl;
     }
 
     public String getContentText() {

@@ -11,8 +11,12 @@ public class ChapterDemoEvaluationResponse {
     private String understandingLevel;
     private Long evaluationMaterialId;
     private String evaluationFilePath;
+    private String evaluationContentUrl;
+    private String evaluationViewUrl;
     private Long nextStepMaterialId;
     private String nextStepFilePath;
+    private String nextStepContentUrl;
+    private String nextStepViewUrl;
 
     public Long getChapterId() {
         return chapterId;
@@ -86,6 +90,22 @@ public class ChapterDemoEvaluationResponse {
         this.evaluationFilePath = evaluationFilePath;
     }
 
+    public String getEvaluationContentUrl() {
+        return evaluationContentUrl;
+    }
+
+    public void setEvaluationContentUrl(String evaluationContentUrl) {
+        this.evaluationContentUrl = evaluationContentUrl;
+    }
+
+    public String getEvaluationViewUrl() {
+        return evaluationViewUrl;
+    }
+
+    public void setEvaluationViewUrl(String evaluationViewUrl) {
+        this.evaluationViewUrl = evaluationViewUrl;
+    }
+
     public Long getNextStepMaterialId() {
         return nextStepMaterialId;
     }
@@ -100,5 +120,21 @@ public class ChapterDemoEvaluationResponse {
 
     public void setNextStepFilePath(String nextStepFilePath) {
         this.nextStepFilePath = nextStepFilePath;
+    }
+
+    public String getNextStepContentUrl() {
+        return nextStepContentUrl;
+    }
+
+    public void setNextStepContentUrl(String nextStepContentUrl) {
+        this.nextStepContentUrl = nextStepContentUrl;
+    }
+
+    public String getNextStepViewUrl() {
+        return nextStepViewUrl;
+    }
+
+    public void setNextStepViewUrl(String nextStepViewUrl) {
+        this.nextStepViewUrl = nextStepViewUrl;
     }
 }

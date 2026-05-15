@@ -92,7 +92,7 @@ public class ValidationServiceImpl implements ValidationService {
 
     @Override
     @Transactional
-    public List<ValidationItemResponse> initializeValidationItems(Long taskId, Long nodeId, String nodeName, String stepType) {
+    public List<ValidationItemResponse> initializeValidationItems(Long taskId, Long nodeId, Long goalId, String nodeName, String stepType) {
         List<ValidationItemResponse> existingItems = listValidationItems(taskId);
         if (!existingItems.isEmpty()) {
             return existingItems;
@@ -213,6 +213,7 @@ public class ValidationServiceImpl implements ValidationService {
         validationItemMapper.delete(new LambdaQueryWrapper<ValidationItem>().eq(ValidationItem::getTaskId, taskId));
 
         List<AiValidationItemDraft> generatedItems = aiValidationService.generateValidationItems(
+                goal.getUserId(),
                 goal.getTopic(),
                 chapterTitle,
                 node.getNodeName(),
