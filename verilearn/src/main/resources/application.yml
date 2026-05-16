@@ -24,6 +24,7 @@ verilearn:
   feishu:
     mode: ${VERILEARN_FEISHU_MODE:LONG_CONNECTION}
     base-url: ${VERILEARN_FEISHU_BASE_URL:https://open.feishu.cn/open-apis}
+    public-base-url: ${VERILEARN_FEISHU_PUBLIC_BASE_URL:http://localhost:8080}
     app-id: ${VERILEARN_FEISHU_APP_ID:}
     app-secret: ${VERILEARN_FEISHU_APP_SECRET:}
     verification-token: ${VERILEARN_FEISHU_VERIFICATION_TOKEN:}

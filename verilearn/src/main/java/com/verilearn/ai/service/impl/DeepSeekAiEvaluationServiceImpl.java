@@ -1,14 +1,19 @@
 package com.verilearn.ai.service.impl;
 
 import com.verilearn.ai.dto.AiDemoEvaluationResult;
+import com.verilearn.ai.exception.AiGenerationException;
 import com.verilearn.ai.service.AiEvaluationService;
 import com.verilearn.ai.service.AiRoutingService;
 import org.springframework.stereotype.Service;
+
+import java.util.Locale;
+import java.util.Set;
 
 @Service
 public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
 
     private static final String PROVIDER = "deepseek";
+    private static final Set<String> BAD_PATTERNS = Set.of("faq", "常见问题", "markdown 简明指南", "200个常见问题");
 
     private final AiRoutingService aiRoutingService;
 
@@ -28,11 +33,11 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
     ) {
         String content = aiRoutingService.chatForUser(
                 userId,
-                "You evaluate Java backend self-study demo submissions.",
+                "You evaluate Chinese self-study demo submissions and return structured results.",
                 buildPrompt(topic, chapterTitle, demoGuide, submissionSummary, codeSnippet, question)
         );
         if (content == null || content.isBlank()) {
-            return fallback(chapterTitle, submissionSummary, question);
+            throw new AiGenerationException("学习评估生成失败，请稍后重试或检查 AI 配置。");
         }
         return parseContent(content, chapterTitle, submissionSummary, question);
     }
@@ -46,7 +51,7 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
             String question
     ) {
         return """
-                Evaluate a Java backend self-study demo submission and answer in Chinese.
+                请评估一次中文自学任务提交，并且严格按指定结构输出。
                 Topic: %s
                 Chapter: %s
                 Demo guide:
@@ -62,18 +67,23 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
                 %s
 
                 Output format:
+                Hard requirements:
+                1. 必须与 Topic / Chapter / Demo guide 相关，不能跑题。
+                2. 不要输出 FAQ、教程总览或无关知识。
+                3. 只能输出以下三个部分。
+
                 [LEVEL]
                 One of HIGH / MEDIUM / LOW
-
+                
                 [EVALUATION]
-                Markdown in Chinese:
+                用中文 Markdown 说明：
                 1. Completion status
                 2. What the learner understands
                 3. Weak points
                 4. Whether review is suggested
 
                 [NEXT_STEP]
-                Markdown in Chinese:
+                用中文 Markdown 给出下一步建议：
                 - continue
                 - smaller follow-up practice
                 - review this chapter first
@@ -92,7 +102,10 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
         String evaluation = extractSection(content, "[EVALUATION]", "[NEXT_STEP]");
         String nextStep = extractSection(content, "[NEXT_STEP]", null);
         if (evaluation == null || evaluation.isBlank() || nextStep == null || nextStep.isBlank()) {
-            return fallback(chapterTitle, submissionSummary, question);
+            throw new AiGenerationException("学习评估结果缺少必要结构，请稍后重试。");
+        }
+        if (!isUsableEvaluationContent(level, evaluation, nextStep)) {
+            throw new AiGenerationException("学习评估结果不符合要求，系统已拒绝写入。");
         }
 
         AiDemoEvaluationResult result = new AiDemoEvaluationResult();
@@ -102,41 +115,6 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
         result.setShouldReview("LOW".equals(result.getUnderstandingLevel()));
         result.setGeneratedByAi(true);
         result.setProvider(PROVIDER);
-        return result;
-    }
-
-    private AiDemoEvaluationResult fallback(String chapterTitle, String submissionSummary, String question) {
-        AiDemoEvaluationResult result = new AiDemoEvaluationResult();
-        result.setUnderstandingLevel("MEDIUM");
-        result.setEvaluationMarkdown("""
-                # Demo Evaluation
-
-                - Chapter: %s
-                - Learner summary: %s
-                - Learner question: %s
-
-                ## Conclusion
-                One round of demo feedback has been submitted. A clearer explanation of the key code path is still recommended.
-
-                ## Current understanding
-                - The learner has entered the hands-on stage.
-                - The learner can already describe the demo result.
-
-                ## Weak points
-                - The reason behind the implementation is not fully clear yet.
-                - The learner should connect the explanation to actual project code.
-                """.formatted(defaultText(chapterTitle), defaultText(submissionSummary), defaultText(question)));
-        result.setNextStepMarkdown("""
-                # Next Step
-
-                1. Re-check the current demo guide item by item.
-                2. Explain what problem this demo solves.
-                3. Point out the most important code section and explain why it is there.
-                4. Submit one more round of feedback or move to the next chapter step.
-                """);
-        result.setShouldReview(false);
-        result.setGeneratedByAi(false);
-        result.setProvider("template");
         return result;
     }
 
@@ -162,6 +140,17 @@ public class DeepSeekAiEvaluationServiceImpl implements AiEvaluationService {
             case "HIGH", "MEDIUM", "LOW" -> normalized;
             default -> "MEDIUM";
         };
+    }
+
+    private boolean isUsableEvaluationContent(String level, String evaluation, String nextStep) {
+        String normalizedLevel = normalizeLevel(level);
+        String combined = (normalizedLevel + "\n" + evaluation + "\n" + nextStep).toLowerCase(Locale.ROOT);
+        for (String badPattern : BAD_PATTERNS) {
+            if (combined.contains(badPattern)) {
+                return false;
+            }
+        }
+        return "HIGH".equals(normalizedLevel) || "MEDIUM".equals(normalizedLevel) || "LOW".equals(normalizedLevel);
     }
 
     private String defaultText(String value) {

@@ -11,6 +11,7 @@ import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
 import com.verilearn.knowledge.entity.KnowledgeNode;
 import com.verilearn.knowledge.mapper.KnowledgeNodeMapper;
+import com.verilearn.workflow.service.LearningRouteService;
 import com.verilearn.user.entity.LearnerUser;
 import com.verilearn.user.mapper.LearnerUserMapper;
 import org.junit.jupiter.api.Test;
@@ -58,10 +59,14 @@ class ChapterControllerTest {
     @MockBean
     private AiEvaluationService aiEvaluationService;
 
+    @MockBean
+    private LearningRouteService learningRouteService;
+
     @Test
     void shouldBootstrapStartAndCompleteChapterWorkflow() throws Exception {
         Long goalId = createGoalWithNodes();
         mockAiMaterialService();
+        mockLearningRouteService();
 
         mockMvc.perform(post("/api/goals/{goalId}/chapters/bootstrap", goalId))
                 .andExpect(status().isOk())
@@ -80,7 +85,13 @@ class ChapterControllerTest {
         mockMvc.perform(post("/api/chapters/{chapterId}/start", chapter.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.data.steps[0].status").value("IN_PROGRESS"));
+                .andExpect(jsonPath("$.data.steps[0].status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.materials.length()").value(0));
+
+        mockMvc.perform(post("/api/chapters/{chapterId}/materials/generate", chapter.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.materials.length()").value(2))
+                .andExpect(jsonPath("$.data.materials[0].filePath").value(org.hamcrest.Matchers.endsWith(".md")));
 
         String chapterDetail = mockMvc.perform(get("/api/chapters/{chapterId}", chapter.getId()))
                 .andExpect(status().isOk())
@@ -101,7 +112,7 @@ class ChapterControllerTest {
                 .andExpect(jsonPath("$.data.materialId").value(firstMaterialId))
                 .andExpect(jsonPath("$.data.filePath").value(org.hamcrest.Matchers.endsWith(".md")))
                 .andExpect(jsonPath("$.data.viewUrl").value("/materials/" + firstMaterialId + "/view"))
-                .andExpect(jsonPath("$.data.contentText").value(org.hamcrest.Matchers.containsString("Spring basics")));
+                .andExpect(jsonPath("$.data.contentText").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.blankOrNullString())));
 
         mockMvc.perform(get("/materials/{materialId}/view", firstMaterialId))
                 .andExpect(status().isOk())
@@ -162,6 +173,7 @@ class ChapterControllerTest {
     void shouldGenerateChapterMaterials() throws Exception {
         Long goalId = createGoalWithNodes();
         mockAiMaterialService();
+        mockLearningRouteService();
 
         mockMvc.perform(post("/api/goals/{goalId}/chapters/bootstrap", goalId))
                 .andExpect(status().isOk());
@@ -190,6 +202,7 @@ class ChapterControllerTest {
         Long goalId = createGoalWithNodes();
         mockAiMaterialService();
         mockAiEvaluationService();
+        mockLearningRouteService();
 
         mockMvc.perform(post("/api/goals/{goalId}/chapters/bootstrap", goalId))
                 .andExpect(status().isOk());
@@ -203,6 +216,9 @@ class ChapterControllerTest {
         assertNotNull(chapter);
 
         mockMvc.perform(post("/api/chapters/{chapterId}/start", chapter.getId()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/chapters/{chapterId}/materials/generate", chapter.getId()))
                 .andExpect(status().isOk());
 
         String chapterDetail = mockMvc.perform(get("/api/chapters/{chapterId}", chapter.getId()))
@@ -303,5 +319,17 @@ class ChapterControllerTest {
         result.setGeneratedByAi(true);
         result.setProvider("deepseek");
         when(aiEvaluationService.evaluateDemoSubmission(org.mockito.ArgumentMatchers.anyLong(), any(), any(), any(), any(), any(), any())).thenReturn(result);
+    }
+
+    private void mockLearningRouteService() {
+        when(learningRouteService.ensureDemoAnswerTemplate(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(learningRouteService.extractDemoAnswerSections(any())).thenReturn("""
+                ## 我的完成记录
+                - 我完成了 Demo。
+                ## 我的回答
+                - 我能解释关键原理。
+                ## 我的自检结果
+                - 已完成
+                """);
     }
 }

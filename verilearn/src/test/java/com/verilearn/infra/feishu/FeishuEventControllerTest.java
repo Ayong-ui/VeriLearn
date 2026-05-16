@@ -3,6 +3,7 @@ package com.verilearn.infra.feishu;
 import com.verilearn.ai.dto.AiProviderConfigResponse;
 import com.verilearn.ai.service.AiProviderConfigService;
 import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
+import com.verilearn.chapter.dto.ChapterSummaryResponse;
 import com.verilearn.infra.feishu.service.FeishuMessagingService;
 import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.task.dto.TaskResponse;
@@ -85,8 +86,11 @@ class FeishuEventControllerTest {
         TaskResponse taskResponse = new TaskResponse();
         taskResponse.setGoalText("学习 Spring Boot fundamentals");
         taskResponse.setChapterTitle("Spring Boot fundamentals");
+        taskResponse.setCurrentChapterNo(1);
+        taskResponse.setTotalChapterCount(4);
         taskResponse.setStepType("READ_THEORY");
         taskResponse.setStatus("PENDING");
+        taskResponse.setRouteViewUrl("http://localhost:8080/learning-routes/ou_test_today/view");
         taskResponse.setTheoryFilePath("spring-boot/01-spring-boot-fundamentals/user/theory/theory.md");
         taskResponse.setTheoryContentUrl("/api/materials/101/content");
         taskResponse.setTheoryViewUrl("/materials/101/view");
@@ -94,7 +98,16 @@ class FeishuEventControllerTest {
         taskResponse.setDemoContentUrl("/api/materials/102/content");
         taskResponse.setDemoViewUrl("/materials/102/view");
         taskResponse.setValidationItems(List.of());
+
+        LearnerDashboardResponse dashboard = new LearnerDashboardResponse();
+        dashboard.setTopic("Spring Boot fundamentals");
+        dashboard.setChapterCount(4);
+        dashboard.setChapters(List.of(
+                chapter(1, "Spring Boot fundamentals", "IN_PROGRESS"),
+                chapter(2, "Spring MVC basics", "NOT_STARTED")
+        ));
         when(learnerWorkflowService.generateTodayTask(eq("ou_test_today"))).thenReturn(taskResponse);
+        when(learnerWorkflowService.getDashboard(eq("ou_test_today"))).thenReturn(dashboard);
 
         mockMvc.perform(post("/api/feishu/events")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -103,10 +116,10 @@ class FeishuEventControllerTest {
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/today"))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("学习 Spring Boot fundamentals")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("theory.md")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/101/view")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("demo-task.md")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/102/view")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("先看理论")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/101/view")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("再做 Demo")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/102/view")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/submit-demo")));
     }
 
@@ -155,8 +168,8 @@ class FeishuEventControllerTest {
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/dashboard"))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("Java 后端")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/101/view")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/102/view")));
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/101/view")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/102/view")));
     }
 
     @Test
@@ -177,8 +190,8 @@ class FeishuEventControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/submit-demo"))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/201/view")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/materials/202/view")));
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/201/view")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/202/view")));
     }
 
     @Test
@@ -228,7 +241,7 @@ class FeishuEventControllerTest {
                         .content(messageEvent("ou_test_ai_config", "/ai config")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/ai/provider-config-page?openId=ou_test_ai_config")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/ai/provider-config-page?openId=ou_test_ai_config")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("API Key")));
     }
 
@@ -255,5 +268,13 @@ class FeishuEventControllerTest {
 
     private String escapeForMessageContent(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private ChapterSummaryResponse chapter(int chapterNo, String title, String status) {
+        ChapterSummaryResponse response = new ChapterSummaryResponse();
+        response.setChapterNo(chapterNo);
+        response.setTitle(title);
+        response.setStatus(status);
+        return response;
     }
 }

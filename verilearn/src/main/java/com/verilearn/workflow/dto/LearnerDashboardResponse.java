@@ -16,6 +16,12 @@ public class LearnerDashboardResponse {
     private String targetLevel;
     private Integer dailyMinutes;
     private String goalStatus;
+    private String routeFilePath;
+    private String routeAbsolutePath;
+    private String routeContentUrl;
+    private String routeViewUrl;
+    private int currentChapterNo;
+    private int totalChapterCount;
     private TaskResponse todayTask;
     private ProgressResponse progress;
     private int chapterCount;
@@ -79,6 +85,54 @@ public class LearnerDashboardResponse {
 
     public void setGoalStatus(String goalStatus) {
         this.goalStatus = goalStatus;
+    }
+
+    public String getRouteFilePath() {
+        return routeFilePath;
+    }
+
+    public void setRouteFilePath(String routeFilePath) {
+        this.routeFilePath = routeFilePath;
+    }
+
+    public String getRouteAbsolutePath() {
+        return routeAbsolutePath;
+    }
+
+    public void setRouteAbsolutePath(String routeAbsolutePath) {
+        this.routeAbsolutePath = routeAbsolutePath;
+    }
+
+    public String getRouteContentUrl() {
+        return routeContentUrl;
+    }
+
+    public void setRouteContentUrl(String routeContentUrl) {
+        this.routeContentUrl = routeContentUrl;
+    }
+
+    public String getRouteViewUrl() {
+        return routeViewUrl;
+    }
+
+    public void setRouteViewUrl(String routeViewUrl) {
+        this.routeViewUrl = routeViewUrl;
+    }
+
+    public int getCurrentChapterNo() {
+        return currentChapterNo;
+    }
+
+    public void setCurrentChapterNo(int currentChapterNo) {
+        this.currentChapterNo = currentChapterNo;
+    }
+
+    public int getTotalChapterCount() {
+        return totalChapterCount;
+    }
+
+    public void setTotalChapterCount(int totalChapterCount) {
+        this.totalChapterCount = totalChapterCount;
     }
 
     public TaskResponse getTodayTask() {

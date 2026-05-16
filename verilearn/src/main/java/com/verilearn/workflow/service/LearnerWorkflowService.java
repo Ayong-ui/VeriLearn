@@ -5,6 +5,7 @@ import com.verilearn.task.dto.TaskResponse;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
 import com.verilearn.chapter.dto.ChapterDemoEvaluationRequest;
 import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
+import com.verilearn.workflow.dto.LearningRouteContentResponse;
 import com.verilearn.workflow.dto.LearnerCurrentContextResponse;
 import com.verilearn.workflow.dto.LearnerDashboardResponse;
 import com.verilearn.workflow.dto.LearnerDemoSubmissionRequest;
@@ -26,6 +27,14 @@ public interface LearnerWorkflowService {
     LearnerDashboardResponse getDashboard(String feishuOpenId);
 
     LearnerCurrentContextResponse getCurrentContext(String feishuOpenId);
+
+    LearningRouteContentResponse getLearningRoute(String feishuOpenId);
+
+    String getLearningRouteViewHtml(String feishuOpenId);
+
+    List<String> generateTopicOptions(String feishuOpenId, String topic);
+
+    void clearLearningRoute(String feishuOpenId, String topic);
 
     ChapterDemoEvaluationResponse evaluateDemoSubmission(String feishuOpenId, Long chapterId, ChapterDemoEvaluationRequest request);
 

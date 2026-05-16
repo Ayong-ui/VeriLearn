@@ -16,7 +16,14 @@ import com.verilearn.task.dto.TaskResponse;
 import com.verilearn.task.entity.DailyTask;
 import com.verilearn.task.mapper.DailyTaskMapper;
 import com.verilearn.task.service.TaskService;
+import com.verilearn.validation.entity.DiversionRecord;
+import com.verilearn.validation.entity.ValidationItem;
+import com.verilearn.validation.entity.ValidationSubmission;
+import com.verilearn.validation.mapper.DiversionRecordMapper;
+import com.verilearn.validation.mapper.ValidationItemMapper;
+import com.verilearn.validation.mapper.ValidationSubmissionMapper;
 import com.verilearn.validation.service.ValidationService;
+import com.verilearn.workflow.service.LearningRouteService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,7 +55,11 @@ public class TaskServiceImpl implements TaskService {
     private final LearningChapterMapper learningChapterMapper;
     private final ChapterStepMapper chapterStepMapper;
     private final ChapterMaterialMapper chapterMaterialMapper;
+    private final ValidationItemMapper validationItemMapper;
+    private final ValidationSubmissionMapper validationSubmissionMapper;
+    private final DiversionRecordMapper diversionRecordMapper;
     private final ValidationService validationService;
+    private final LearningRouteService learningRouteService;
 
     public TaskServiceImpl(
             LearningGoalMapper learningGoalMapper,
@@ -57,7 +68,11 @@ public class TaskServiceImpl implements TaskService {
             LearningChapterMapper learningChapterMapper,
             ChapterStepMapper chapterStepMapper,
             ChapterMaterialMapper chapterMaterialMapper,
-            ValidationService validationService
+            ValidationItemMapper validationItemMapper,
+            ValidationSubmissionMapper validationSubmissionMapper,
+            DiversionRecordMapper diversionRecordMapper,
+            ValidationService validationService,
+            LearningRouteService learningRouteService
     ) {
         this.learningGoalMapper = learningGoalMapper;
         this.knowledgeNodeMapper = knowledgeNodeMapper;
@@ -65,7 +80,11 @@ public class TaskServiceImpl implements TaskService {
         this.learningChapterMapper = learningChapterMapper;
         this.chapterStepMapper = chapterStepMapper;
         this.chapterMaterialMapper = chapterMaterialMapper;
+        this.validationItemMapper = validationItemMapper;
+        this.validationSubmissionMapper = validationSubmissionMapper;
+        this.diversionRecordMapper = diversionRecordMapper;
         this.validationService = validationService;
+        this.learningRouteService = learningRouteService;
     }
 
     @Override
@@ -85,7 +104,11 @@ public class TaskServiceImpl implements TaskService {
                         .last("LIMIT 1")
         );
         if (existingTask != null) {
-            return toTaskResponse(existingTask);
+            if (!isTaskContextValid(existingTask, goal.getId())) {
+                deleteTaskCascade(existingTask.getId());
+            } else {
+                return toTaskResponse(existingTask);
+            }
         }
 
         ChapterTaskContext chapterTaskContext = resolveChapterTaskContext(goal.getId());
@@ -308,6 +331,34 @@ public class TaskServiceImpl implements TaskService {
         return toTaskResponse(task, node, chapter);
     }
 
+    private boolean isTaskContextValid(DailyTask task, Long goalId) {
+        KnowledgeNode node = knowledgeNodeMapper.selectById(task.getNodeId());
+        if (node == null || !goalId.equals(node.getGoalId())) {
+            return false;
+        }
+        if (task.getChapterId() == null) {
+            return true;
+        }
+        LearningChapter chapter = learningChapterMapper.selectById(task.getChapterId());
+        return chapter != null && goalId.equals(chapter.getGoalId());
+    }
+
+    private void deleteTaskCascade(Long taskId) {
+        validationSubmissionMapper.delete(
+                new LambdaQueryWrapper<ValidationSubmission>()
+                        .eq(ValidationSubmission::getTaskId, taskId)
+        );
+        validationItemMapper.delete(
+                new LambdaQueryWrapper<ValidationItem>()
+                        .eq(ValidationItem::getTaskId, taskId)
+        );
+        diversionRecordMapper.delete(
+                new LambdaQueryWrapper<DiversionRecord>()
+                        .eq(DiversionRecord::getTaskId, taskId)
+        );
+        dailyTaskMapper.deleteById(taskId);
+    }
+
     private TaskResponse toTaskResponse(DailyTask task, KnowledgeNode node, LearningChapter chapter) {
         if (node == null) {
             throw new IllegalArgumentException("knowledge node not found");
@@ -327,8 +378,30 @@ public class TaskServiceImpl implements TaskService {
         response.setGoalText(task.getGoalText());
         response.setStudyMaterial(task.getStudyMaterial());
         response.setStatus(task.getStatus());
+        applyRouteMetadata(response, node.getGoalId(), chapter);
         response.setValidationItems(validationService.initializeValidationItems(task.getId(), node.getId(), node.getGoalId(), node.getNodeName(), task.getStepType()));
         return response;
+    }
+
+    private void applyRouteMetadata(TaskResponse response, Long goalId, LearningChapter chapter) {
+        LearningGoal goal = learningGoalMapper.selectById(goalId);
+        if (goal == null) {
+            return;
+        }
+
+        response.setRouteFilePath(learningRouteService.buildRouteRelativePath(goal.getTopic()));
+        response.setRouteAbsolutePath(learningRouteService.resolveAbsolutePath(response.getRouteFilePath()));
+
+        List<LearningChapter> chapters = learningChapterMapper.selectList(
+                new LambdaQueryWrapper<LearningChapter>()
+                        .eq(LearningChapter::getGoalId, goalId)
+                        .orderByAsc(LearningChapter::getChapterNo)
+                        .orderByAsc(LearningChapter::getId)
+        );
+        response.setTotalChapterCount(chapters.size());
+        if (chapter != null) {
+            response.setCurrentChapterNo(chapter.getChapterNo());
+        }
     }
 
     private void applyMaterialLinks(TaskResponse response, LearningChapter chapter) {

@@ -14,6 +14,12 @@ public class TaskResponse {
     private String nodeName;
     private Long chapterId;
     private String chapterTitle;
+    private Integer currentChapterNo;
+    private Integer totalChapterCount;
+    private String routeFilePath;
+    private String routeAbsolutePath;
+    private String routeContentUrl;
+    private String routeViewUrl;
     private Long theoryMaterialId;
     private String theoryFilePath;
     private String theoryContentUrl;
@@ -84,6 +90,54 @@ public class TaskResponse {
 
     public void setChapterTitle(String chapterTitle) {
         this.chapterTitle = chapterTitle;
+    }
+
+    public Integer getCurrentChapterNo() {
+        return currentChapterNo;
+    }
+
+    public void setCurrentChapterNo(Integer currentChapterNo) {
+        this.currentChapterNo = currentChapterNo;
+    }
+
+    public Integer getTotalChapterCount() {
+        return totalChapterCount;
+    }
+
+    public void setTotalChapterCount(Integer totalChapterCount) {
+        this.totalChapterCount = totalChapterCount;
+    }
+
+    public String getRouteFilePath() {
+        return routeFilePath;
+    }
+
+    public void setRouteFilePath(String routeFilePath) {
+        this.routeFilePath = routeFilePath;
+    }
+
+    public String getRouteAbsolutePath() {
+        return routeAbsolutePath;
+    }
+
+    public void setRouteAbsolutePath(String routeAbsolutePath) {
+        this.routeAbsolutePath = routeAbsolutePath;
+    }
+
+    public String getRouteContentUrl() {
+        return routeContentUrl;
+    }
+
+    public void setRouteContentUrl(String routeContentUrl) {
+        this.routeContentUrl = routeContentUrl;
+    }
+
+    public String getRouteViewUrl() {
+        return routeViewUrl;
+    }
+
+    public void setRouteViewUrl(String routeViewUrl) {
+        this.routeViewUrl = routeViewUrl;
     }
 
     public Long getTheoryMaterialId() {
