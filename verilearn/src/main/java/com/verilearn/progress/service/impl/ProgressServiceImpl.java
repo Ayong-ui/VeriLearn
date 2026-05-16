@@ -24,6 +24,8 @@ import java.util.Map;
 @Service
 public class ProgressServiceImpl implements ProgressService {
 
+    private static final String GOAL_ACTIVE = "ACTIVE";
+
     private final LearningGoalMapper learningGoalMapper;
     private final KnowledgeNodeMapper knowledgeNodeMapper;
     private final DailyTaskMapper dailyTaskMapper;
@@ -49,9 +51,18 @@ public class ProgressServiceImpl implements ProgressService {
         LearningGoal goal = learningGoalMapper.selectOne(
                 new LambdaQueryWrapper<LearningGoal>()
                         .eq(LearningGoal::getUserId, userId)
+                        .eq(LearningGoal::getStatus, GOAL_ACTIVE)
                         .orderByDesc(LearningGoal::getId)
                         .last("LIMIT 1")
         );
+        if (goal == null) {
+            goal = learningGoalMapper.selectOne(
+                    new LambdaQueryWrapper<LearningGoal>()
+                            .eq(LearningGoal::getUserId, userId)
+                            .orderByDesc(LearningGoal::getId)
+                            .last("LIMIT 1")
+            );
+        }
         if (goal == null) {
             throw new IllegalArgumentException("goal not found");
         }

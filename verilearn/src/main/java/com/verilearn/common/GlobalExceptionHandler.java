@@ -1,5 +1,6 @@
 package com.verilearn.common;
 
+import com.verilearn.ai.exception.AiGenerationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -18,6 +19,11 @@ public class GlobalExceptionHandler {
                 ? "invalid request"
                 : exception.getBindingResult().getFieldErrors().get(0).getDefaultMessage();
         return ApiResponse.error(400, message);
+    }
+
+    @ExceptionHandler(AiGenerationException.class)
+    public ApiResponse<Void> handleAiGenerationException(AiGenerationException exception) {
+        return ApiResponse.error(502, exception.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

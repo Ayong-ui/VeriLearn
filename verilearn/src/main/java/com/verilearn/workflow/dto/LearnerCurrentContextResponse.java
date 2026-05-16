@@ -12,6 +12,10 @@ public class LearnerCurrentContextResponse {
     private String feishuOpenId;
     private String topic;
     private String goalStatus;
+    private String routeFilePath;
+    private String routeAbsolutePath;
+    private String routeContentUrl;
+    private String routeViewUrl;
     private TaskResponse todayTask;
     private ChapterDetailResponse currentChapter;
     private Long evaluationMaterialId;
@@ -62,6 +66,38 @@ public class LearnerCurrentContextResponse {
 
     public void setGoalStatus(String goalStatus) {
         this.goalStatus = goalStatus;
+    }
+
+    public String getRouteFilePath() {
+        return routeFilePath;
+    }
+
+    public void setRouteFilePath(String routeFilePath) {
+        this.routeFilePath = routeFilePath;
+    }
+
+    public String getRouteAbsolutePath() {
+        return routeAbsolutePath;
+    }
+
+    public void setRouteAbsolutePath(String routeAbsolutePath) {
+        this.routeAbsolutePath = routeAbsolutePath;
+    }
+
+    public String getRouteContentUrl() {
+        return routeContentUrl;
+    }
+
+    public void setRouteContentUrl(String routeContentUrl) {
+        this.routeContentUrl = routeContentUrl;
+    }
+
+    public String getRouteViewUrl() {
+        return routeViewUrl;
+    }
+
+    public void setRouteViewUrl(String routeViewUrl) {
+        this.routeViewUrl = routeViewUrl;
     }
 
     public TaskResponse getTodayTask() {

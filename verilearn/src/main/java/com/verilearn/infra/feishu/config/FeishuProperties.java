@@ -7,6 +7,7 @@ public class FeishuProperties {
 
     private String mode;
     private String baseUrl;
+    private String publicBaseUrl;
     private String appId;
     private String appSecret;
     private String verificationToken;
@@ -31,6 +32,14 @@ public class FeishuProperties {
 
     public String getAppId() {
         return appId;
+    }
+
+    public String getPublicBaseUrl() {
+        return publicBaseUrl;
+    }
+
+    public void setPublicBaseUrl(String publicBaseUrl) {
+        this.publicBaseUrl = publicBaseUrl;
     }
 
     public void setAppId(String appId) {

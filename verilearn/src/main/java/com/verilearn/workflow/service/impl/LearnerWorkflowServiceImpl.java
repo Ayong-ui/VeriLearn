@@ -7,6 +7,14 @@ import com.verilearn.chapter.dto.ChapterDemoEvaluationRequest;
 import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
 import com.verilearn.chapter.dto.ChapterMaterialResponse;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
+import com.verilearn.chapter.entity.ChapterMaterial;
+import com.verilearn.chapter.entity.ChapterReviewRecord;
+import com.verilearn.chapter.entity.ChapterStep;
+import com.verilearn.chapter.entity.LearningChapter;
+import com.verilearn.chapter.mapper.ChapterMaterialMapper;
+import com.verilearn.chapter.mapper.ChapterReviewRecordMapper;
+import com.verilearn.chapter.mapper.ChapterStepMapper;
+import com.verilearn.chapter.mapper.LearningChapterMapper;
 import com.verilearn.chapter.service.ChapterService;
 import com.verilearn.goal.dto.GoalResponse;
 import com.verilearn.goal.dto.GoalUpsertRequest;
@@ -17,38 +25,59 @@ import com.verilearn.knowledge.dto.KnowledgeNodeBatchUpsertRequest;
 import com.verilearn.knowledge.dto.KnowledgeNodeConfirmResponse;
 import com.verilearn.knowledge.dto.KnowledgeNodeDraftRequest;
 import com.verilearn.knowledge.dto.KnowledgeNodeResponse;
+import com.verilearn.knowledge.entity.KnowledgeNode;
+import com.verilearn.knowledge.mapper.KnowledgeNodeMapper;
 import com.verilearn.knowledge.service.KnowledgeService;
 import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.progress.service.ProgressService;
 import com.verilearn.task.dto.GenerateTaskRequest;
 import com.verilearn.task.dto.TaskResponse;
+import com.verilearn.task.entity.DailyTask;
+import com.verilearn.task.mapper.DailyTaskMapper;
 import com.verilearn.task.service.TaskService;
 import com.verilearn.user.entity.LearnerUser;
 import com.verilearn.user.mapper.LearnerUserMapper;
-import com.verilearn.workflow.dto.LearnerSetupRequest;
+import com.verilearn.validation.entity.DiversionRecord;
+import com.verilearn.validation.entity.ValidationItem;
+import com.verilearn.validation.entity.ValidationSubmission;
+import com.verilearn.validation.mapper.DiversionRecordMapper;
+import com.verilearn.validation.mapper.ValidationItemMapper;
+import com.verilearn.validation.mapper.ValidationSubmissionMapper;
+import com.verilearn.workflow.dto.LearningRouteChapter;
+import com.verilearn.workflow.dto.LearningRouteContentResponse;
+import com.verilearn.workflow.dto.LearningRoutePlan;
 import com.verilearn.workflow.dto.LearnerCurrentContextResponse;
+import com.verilearn.workflow.dto.LearnerDashboardResponse;
 import com.verilearn.workflow.dto.LearnerDemoSubmissionRequest;
 import com.verilearn.workflow.dto.LearnerMaterialReference;
-import com.verilearn.workflow.dto.LearnerDashboardResponse;
+import com.verilearn.workflow.dto.LearnerSetupRequest;
 import com.verilearn.workflow.dto.LearnerSetupResponse;
 import com.verilearn.workflow.service.LearnerWorkflowService;
+import com.verilearn.workflow.service.LearningRouteService;
+import com.verilearn.workflow.service.TopicValidationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
 
     private static final Logger log = LoggerFactory.getLogger(LearnerWorkflowServiceImpl.class);
 
+    private static final String GOAL_ACTIVE = "ACTIVE";
+    private static final String GOAL_COMPLETED = "COMPLETED";
     private static final String DEFAULT_TARGET_LEVEL = "intern";
     private static final Integer DEFAULT_DAILY_MINUTES = 120;
+    private static final String ROUTE_CONTENT_URL_TEMPLATE = "/api/learners/%s/learning-route";
+    private static final String ROUTE_VIEW_URL_TEMPLATE = "/learning-routes/%s/view";
     private static final String MATERIAL_CONTENT_URL_TEMPLATE = "/api/materials/%d/content";
     private static final String MATERIAL_VIEW_URL_TEMPLATE = "/materials/%d/view";
 
@@ -59,6 +88,17 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
     private final ProgressService progressService;
     private final LearnerUserMapper learnerUserMapper;
     private final LearningGoalMapper learningGoalMapper;
+    private final TopicValidationService topicValidationService;
+    private final LearningRouteService learningRouteService;
+    private final DailyTaskMapper dailyTaskMapper;
+    private final KnowledgeNodeMapper knowledgeNodeMapper;
+    private final LearningChapterMapper learningChapterMapper;
+    private final ChapterStepMapper chapterStepMapper;
+    private final ChapterMaterialMapper chapterMaterialMapper;
+    private final ChapterReviewRecordMapper chapterReviewRecordMapper;
+    private final ValidationItemMapper validationItemMapper;
+    private final ValidationSubmissionMapper validationSubmissionMapper;
+    private final DiversionRecordMapper diversionRecordMapper;
 
     public LearnerWorkflowServiceImpl(
             GoalService goalService,
@@ -67,7 +107,18 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
             TaskService taskService,
             ProgressService progressService,
             LearnerUserMapper learnerUserMapper,
-            LearningGoalMapper learningGoalMapper
+            LearningGoalMapper learningGoalMapper,
+            TopicValidationService topicValidationService,
+            LearningRouteService learningRouteService,
+            DailyTaskMapper dailyTaskMapper,
+            KnowledgeNodeMapper knowledgeNodeMapper,
+            LearningChapterMapper learningChapterMapper,
+            ChapterStepMapper chapterStepMapper,
+            ChapterMaterialMapper chapterMaterialMapper,
+            ChapterReviewRecordMapper chapterReviewRecordMapper,
+            ValidationItemMapper validationItemMapper,
+            ValidationSubmissionMapper validationSubmissionMapper,
+            DiversionRecordMapper diversionRecordMapper
     ) {
         this.goalService = goalService;
         this.chapterService = chapterService;
@@ -76,20 +127,41 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         this.progressService = progressService;
         this.learnerUserMapper = learnerUserMapper;
         this.learningGoalMapper = learningGoalMapper;
+        this.topicValidationService = topicValidationService;
+        this.learningRouteService = learningRouteService;
+        this.dailyTaskMapper = dailyTaskMapper;
+        this.knowledgeNodeMapper = knowledgeNodeMapper;
+        this.learningChapterMapper = learningChapterMapper;
+        this.chapterStepMapper = chapterStepMapper;
+        this.chapterMaterialMapper = chapterMaterialMapper;
+        this.chapterReviewRecordMapper = chapterReviewRecordMapper;
+        this.validationItemMapper = validationItemMapper;
+        this.validationSubmissionMapper = validationSubmissionMapper;
+        this.diversionRecordMapper = diversionRecordMapper;
     }
 
     @Override
     @Transactional
     public LearnerSetupResponse setupLearner(LearnerSetupRequest request) {
-        GoalResponse goal = goalService.saveGoal(toGoalRequest(request));
+        topicValidationService.validateTopicOrThrow(request.getTopic());
+        ensureNoBlockingActiveGoal(request.getFeishuOpenId());
 
+        LearnerUser learnerUser = getOrCreateLearnerByOpenId(request.getFeishuOpenId());
+        LearningRoutePlan routePlan = learningRouteService.generateLearningRoute(
+                learnerUser.getId(),
+                request.getTopic(),
+                effectiveTargetLevel(request.getTargetLevel())
+        );
+
+        GoalResponse goal = goalService.saveGoal(toGoalRequest(request));
         KnowledgeNodeBatchUpsertRequest nodeRequest = new KnowledgeNodeBatchUpsertRequest();
-        nodeRequest.setNodes(buildDraftNodes(request));
+        nodeRequest.setNodes(buildDraftNodes(routePlan.getChapters()));
         knowledgeService.replaceKnowledgeNodes(goal.getGoalId(), nodeRequest);
 
         KnowledgeNodeConfirmResponse confirmResponse = knowledgeService.confirmKnowledgeNodes(goal.getGoalId());
         List<KnowledgeNodeResponse> savedNodes = knowledgeService.listKnowledgeNodes(goal.getGoalId());
-        ChapterBootstrapResponse chapterBootstrapResponse = chapterService.bootstrapChapters(goal.getGoalId());
+        ChapterBootstrapResponse chapterBootstrapResponse = chapterService.bootstrapChapters(goal.getGoalId(), routePlan.getChapters());
+        learningRouteService.createOrUpdateRouteFile(goal.getTopic(), routePlan.getMarkdownContent());
         pregenerateFirstChapterIfNecessary(goal.getGoalId());
 
         LearnerSetupResponse response = new LearnerSetupResponse();
@@ -108,10 +180,11 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
 
     @Override
     public TaskResponse generateTodayTask(String feishuOpenId) {
-        LearningGoal goal = getLatestGoalByOpenId(feishuOpenId);
+        LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
         GenerateTaskRequest request = new GenerateTaskRequest();
         request.setGoalId(goal.getId());
-        return taskService.generateTask(request);
+        TaskResponse task = taskService.generateTask(request);
+        return enrichTaskResponse(feishuOpenId, goal, task);
     }
 
     @Override
@@ -122,19 +195,20 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
 
     @Override
     public List<ChapterSummaryResponse> listChapters(String feishuOpenId) {
-        LearningGoal goal = getLatestGoalByOpenId(feishuOpenId);
+        LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
         return chapterService.listChaptersByGoalId(goal.getId());
     }
 
     @Override
     public LearnerDashboardResponse getDashboard(String feishuOpenId) {
         LearnerUser learnerUser = getLearnerByOpenId(feishuOpenId);
-        LearningGoal goal = getLatestGoalByOpenId(feishuOpenId);
+        LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
         ProgressResponse progress = progressService.getProgress(learnerUser.getId());
         List<ChapterSummaryResponse> chapters = chapterService.listChaptersByGoalId(goal.getId());
         List<ChapterSummaryResponse> pendingReviews = chapterService.listPendingReviewsByGoalId(goal.getId());
-        TaskResponse todayTask = taskService.findTaskByUserAndDate(learnerUser.getId(), LocalDate.now());
+        TaskResponse todayTask = findTodayTaskForGoal(feishuOpenId, goal, learnerUser.getId());
         ChapterDetailResponse currentChapter = resolveCurrentChapter(goal.getId(), todayTask);
+        LearningRouteContentResponse route = getLearningRoute(feishuOpenId);
 
         LearnerDashboardResponse response = new LearnerDashboardResponse();
         response.setUserId(learnerUser.getId());
@@ -146,6 +220,12 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         response.setGoalStatus(goal.getStatus());
         response.setTodayTask(todayTask);
         response.setProgress(progress);
+        response.setRouteFilePath(route.getFilePath());
+        response.setRouteAbsolutePath(route.getAbsoluteFilePath());
+        response.setRouteContentUrl(route.getContentUrl());
+        response.setRouteViewUrl(route.getViewUrl());
+        response.setCurrentChapterNo(currentChapter == null || currentChapter.getChapterNo() == null ? 0 : currentChapter.getChapterNo());
+        response.setTotalChapterCount(chapters.size());
         response.setChapterCount(chapters.size());
         response.setPendingReviewCount(pendingReviews.size());
         response.setCurrentChapter(currentChapter);
@@ -158,11 +238,12 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
     @Override
     public LearnerCurrentContextResponse getCurrentContext(String feishuOpenId) {
         LearnerUser learnerUser = getLearnerByOpenId(feishuOpenId);
-        LearningGoal goal = getLatestGoalByOpenId(feishuOpenId);
-        TaskResponse todayTask = taskService.findTaskByUserAndDate(learnerUser.getId(), LocalDate.now());
+        LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
+        TaskResponse todayTask = findTodayTaskForGoal(feishuOpenId, goal, learnerUser.getId());
         ChapterDetailResponse currentChapter = resolveCurrentChapter(goal.getId(), todayTask);
         LearnerMaterialReference evaluationMaterial = extractMaterial(currentChapter, "EVALUATION_REPORT");
         LearnerMaterialReference nextStepMaterial = extractMaterial(currentChapter, "NEXT_STEP_NOTE");
+        LearningRouteContentResponse route = getLearningRoute(feishuOpenId);
 
         LearnerCurrentContextResponse response = new LearnerCurrentContextResponse();
         response.setUserId(learnerUser.getId());
@@ -170,6 +251,10 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         response.setFeishuOpenId(feishuOpenId);
         response.setTopic(goal.getTopic());
         response.setGoalStatus(goal.getStatus());
+        response.setRouteFilePath(route.getFilePath());
+        response.setRouteAbsolutePath(route.getAbsoluteFilePath());
+        response.setRouteContentUrl(route.getContentUrl());
+        response.setRouteViewUrl(route.getViewUrl());
         response.setTodayTask(todayTask);
         response.setCurrentChapter(currentChapter);
         if (evaluationMaterial != null) {
@@ -189,19 +274,126 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
     }
 
     @Override
+    public LearningRouteContentResponse getLearningRoute(String feishuOpenId) {
+        LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
+        return learningRouteService.buildRouteContentResponse(
+                goal.getTopic(),
+                ROUTE_CONTENT_URL_TEMPLATE.formatted(feishuOpenId),
+                ROUTE_VIEW_URL_TEMPLATE.formatted(feishuOpenId)
+        );
+    }
+
+    @Override
+    public String getLearningRouteViewHtml(String feishuOpenId) {
+        LearningRouteContentResponse route = getLearningRoute(feishuOpenId);
+        return """
+                <!DOCTYPE html>
+                <html lang="zh-CN">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>%s</title>
+                    <style>
+                        body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; background: #f5f7fb; color: #1f2937; }
+                        .container { max-width: 980px; margin: 40px auto; padding: 0 20px; }
+                        .header, .content { background: #ffffff; border: 1px solid #dbe4f0; border-radius: 18px; padding: 24px 28px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06); }
+                        .content { margin-top: 24px; }
+                        .badge { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: 13px; font-weight: 600; }
+                        h1 { margin: 16px 0 10px; font-size: 30px; }
+                        .meta { margin: 6px 0; color: #4b5563; font-size: 14px; }
+                        a { text-decoration: none; color: #ffffff; background: #2563eb; padding: 10px 14px; border-radius: 10px; font-size: 14px; display: inline-block; margin-top: 18px; }
+                        pre { margin: 0; white-space: pre-wrap; word-break: break-word; line-height: 1.72; font-size: 15px; font-family: "JetBrains Mono", "Cascadia Code", "Consolas", "Microsoft YaHei", monospace; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <section class="header">
+                            <span class="badge">学习路线</span>
+                            <h1>%s</h1>
+                            <div class="meta">文件路径：%s</div>
+                            <div class="meta">绝对路径：%s</div>
+                            <a href="%s">查看 JSON 内容接口</a>
+                        </section>
+                        <section class="content">
+                            <pre>%s</pre>
+                        </section>
+                    </div>
+                </body>
+                </html>
+                """.formatted(
+                escapeHtml(route.getTopic()),
+                escapeHtml(route.getTopic()),
+                escapeHtml(route.getFilePath()),
+                escapeHtml(route.getAbsoluteFilePath()),
+                route.getContentUrl(),
+                escapeHtml(route.getContentText())
+        );
+    }
+
+    @Override
+    public List<String> generateTopicOptions(String feishuOpenId, String topic) {
+        LearnerUser learnerUser = getOrCreateLearnerByOpenId(feishuOpenId);
+        return learningRouteService.generateTopicOptions(learnerUser.getId(), topic);
+    }
+
+    @Override
+    @Transactional
+    public void clearLearningRoute(String feishuOpenId, String topic) {
+        LearningGoal goal = getActiveGoalOrNull(feishuOpenId);
+        if (goal == null) {
+            throw new IllegalArgumentException("当前没有可清理的进行中学习路线。");
+        }
+        if (!normalizeTopic(goal.getTopic()).equals(normalizeTopic(topic))) {
+            throw new IllegalArgumentException("当前进行中的学习路线不是 " + topic + "。");
+        }
+
+        List<LearningChapter> chapters = learningChapterMapper.selectList(
+                new LambdaQueryWrapper<LearningChapter>()
+                        .eq(LearningChapter::getGoalId, goal.getId())
+        );
+        List<Long> chapterIds = chapters.stream().map(LearningChapter::getId).toList();
+        List<Long> taskIds = dailyTaskMapper.selectList(
+                        new LambdaQueryWrapper<DailyTask>()
+                                .eq(DailyTask::getUserId, goal.getUserId())
+                ).stream()
+                .filter(task -> belongsToGoal(task, goal.getId()))
+                .map(DailyTask::getId)
+                .toList();
+
+        if (!taskIds.isEmpty()) {
+            validationSubmissionMapper.delete(new LambdaQueryWrapper<ValidationSubmission>().in(ValidationSubmission::getTaskId, taskIds));
+            validationItemMapper.delete(new LambdaQueryWrapper<ValidationItem>().in(ValidationItem::getTaskId, taskIds));
+            diversionRecordMapper.delete(new LambdaQueryWrapper<DiversionRecord>().in(DiversionRecord::getTaskId, taskIds));
+            dailyTaskMapper.delete(new LambdaQueryWrapper<DailyTask>().in(DailyTask::getId, taskIds));
+        }
+
+        if (!chapterIds.isEmpty()) {
+            chapterStepMapper.delete(new LambdaQueryWrapper<ChapterStep>().in(ChapterStep::getChapterId, chapterIds));
+            chapterMaterialMapper.delete(new LambdaQueryWrapper<ChapterMaterial>().in(ChapterMaterial::getChapterId, chapterIds));
+            chapterReviewRecordMapper.delete(new LambdaQueryWrapper<ChapterReviewRecord>().in(ChapterReviewRecord::getChapterId, chapterIds));
+            learningChapterMapper.delete(new LambdaQueryWrapper<LearningChapter>().in(LearningChapter::getId, chapterIds));
+        }
+
+        knowledgeNodeMapper.delete(new LambdaQueryWrapper<KnowledgeNode>().eq(KnowledgeNode::getGoalId, goal.getId()));
+        learningGoalMapper.deleteById(goal.getId());
+        learningRouteService.deleteRouteDirectory(goal.getTopic());
+    }
+
+    @Override
     @Transactional
     public ChapterDemoEvaluationResponse evaluateDemoSubmission(String feishuOpenId, Long chapterId, ChapterDemoEvaluationRequest request) {
-        LearningGoal goal = getLatestGoalByOpenId(feishuOpenId);
+        LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
         ensureChapterBelongsToGoal(goal.getId(), chapterId);
         ChapterDemoEvaluationResponse response = chapterService.evaluateDemoSubmission(chapterId, request);
         pregenerateNextChapterIfNecessary(goal.getId(), chapterId);
+        refreshGoalStatusIfCompleted(goal.getId());
         return response;
     }
 
     @Override
     @Transactional
     public ChapterDemoEvaluationResponse evaluateCurrentDemoSubmission(String feishuOpenId, LearnerDemoSubmissionRequest request) {
-        LearningGoal goal = getLatestGoalByOpenId(feishuOpenId);
+        LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
         LearnerUser learnerUser = getLearnerByOpenId(feishuOpenId);
         TaskResponse todayTask = taskService.findTaskByUserAndDate(learnerUser.getId(), LocalDate.now());
         ChapterDetailResponse currentChapter = resolveCurrentChapter(goal.getId(), todayTask);
@@ -214,7 +406,7 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
     @Override
     @Transactional
     public ChapterDemoEvaluationResponse evaluateCurrentDemoSubmission(String feishuOpenId, Long chapterId, LearnerDemoSubmissionRequest request) {
-        LearningGoal goal = getLatestGoalByOpenId(feishuOpenId);
+        LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
         ensureChapterBelongsToGoal(goal.getId(), chapterId);
         ChapterDetailResponse chapterDetail = chapterService.getChapterDetail(chapterId);
         Long currentDemoStepId = chapterDetail.getSteps().stream()
@@ -231,6 +423,7 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         evaluationRequest.setQuestion(request.getQuestion());
         ChapterDemoEvaluationResponse response = chapterService.evaluateDemoSubmission(chapterId, evaluationRequest);
         pregenerateNextChapterIfNecessary(goal.getId(), chapterId);
+        refreshGoalStatusIfCompleted(goal.getId());
         return response;
     }
 
@@ -238,38 +431,45 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         GoalUpsertRequest goalRequest = new GoalUpsertRequest();
         goalRequest.setFeishuOpenId(request.getFeishuOpenId());
         goalRequest.setTopic(request.getTopic());
-        goalRequest.setTargetLevel(
-                request.getTargetLevel() == null || request.getTargetLevel().isBlank()
-                        ? DEFAULT_TARGET_LEVEL
-                        : request.getTargetLevel()
-        );
+        goalRequest.setTargetLevel(effectiveTargetLevel(request.getTargetLevel()));
         goalRequest.setDailyMinutes(request.getDailyMinutes() == null ? DEFAULT_DAILY_MINUTES : request.getDailyMinutes());
         return goalRequest;
     }
 
-    private List<KnowledgeNodeDraftRequest> buildDraftNodes(LearnerSetupRequest request) {
-        List<String> nodeNames = request.getNodeNames();
-        if (nodeNames == null || nodeNames.isEmpty()) {
-            nodeNames = buildDefaultNodeNames(request.getTopic());
-        }
+    private String effectiveTargetLevel(String targetLevel) {
+        return targetLevel == null || targetLevel.isBlank() ? DEFAULT_TARGET_LEVEL : targetLevel;
+    }
 
+    private List<KnowledgeNodeDraftRequest> buildDraftNodes(List<LearningRouteChapter> routeChapters) {
         List<KnowledgeNodeDraftRequest> nodes = new ArrayList<>();
-        for (int i = 0; i < nodeNames.size(); i++) {
+        for (int i = 0; i < routeChapters.size(); i++) {
+            LearningRouteChapter routeChapter = routeChapters.get(i);
             KnowledgeNodeDraftRequest node = new KnowledgeNodeDraftRequest();
-            node.setNodeName(nodeNames.get(i));
+            node.setNodeName(routeChapter.getTitle());
             node.setSequenceNo(i + 1);
             nodes.add(node);
         }
         return nodes;
     }
 
-    private List<String> buildDefaultNodeNames(String topic) {
-        return List.of(
-                topic + " fundamentals",
-                topic + " environment setup",
-                topic + " first practical example",
-                topic + " real usage scenario"
+    private LearnerUser getOrCreateLearnerByOpenId(String feishuOpenId) {
+        LearnerUser learnerUser = learnerUserMapper.selectOne(
+                new LambdaQueryWrapper<LearnerUser>()
+                        .eq(LearnerUser::getFeishuOpenId, feishuOpenId)
+                        .orderByDesc(LearnerUser::getId)
+                        .last("LIMIT 1")
         );
+        if (learnerUser != null) {
+            return learnerUser;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        LearnerUser newUser = new LearnerUser();
+        newUser.setFeishuOpenId(feishuOpenId);
+        newUser.setCreatedAt(now);
+        newUser.setUpdatedAt(now);
+        learnerUserMapper.insert(newUser);
+        return newUser;
     }
 
     private LearnerUser getLearnerByOpenId(String feishuOpenId) {
@@ -285,18 +485,64 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         return learnerUser;
     }
 
-    private LearningGoal getLatestGoalByOpenId(String feishuOpenId) {
-        LearnerUser learnerUser = getLearnerByOpenId(feishuOpenId);
+    private LearningGoal getActiveGoalByOpenId(String feishuOpenId) {
+        LearningGoal goal = getActiveGoalOrNull(feishuOpenId);
+        if (goal == null) {
+            throw new IllegalArgumentException("当前没有进行中的学习路线，请先发送 /start 学习主题。");
+        }
+        return goal;
+    }
+
+    private LearningGoal getActiveGoalOrNull(String feishuOpenId) {
+        LearnerUser learnerUser = learnerUserMapper.selectOne(
+                new LambdaQueryWrapper<LearnerUser>()
+                        .eq(LearnerUser::getFeishuOpenId, feishuOpenId)
+                        .orderByDesc(LearnerUser::getId)
+                        .last("LIMIT 1")
+        );
+        if (learnerUser == null) {
+            return null;
+        }
         LearningGoal goal = learningGoalMapper.selectOne(
                 new LambdaQueryWrapper<LearningGoal>()
                         .eq(LearningGoal::getUserId, learnerUser.getId())
+                        .eq(LearningGoal::getStatus, GOAL_ACTIVE)
                         .orderByDesc(LearningGoal::getId)
                         .last("LIMIT 1")
         );
         if (goal == null) {
-            throw new IllegalArgumentException("goal not found");
+            return null;
         }
-        return goal;
+        refreshGoalStatusIfCompleted(goal.getId());
+        return learningGoalMapper.selectById(goal.getId());
+    }
+
+    private void ensureNoBlockingActiveGoal(String feishuOpenId) {
+        LearningGoal activeGoal = getActiveGoalOrNull(feishuOpenId);
+        if (activeGoal == null) {
+            return;
+        }
+        if (!GOAL_ACTIVE.equals(activeGoal.getStatus())) {
+            return;
+        }
+
+        LearnerUser learnerUser = getLearnerByOpenId(feishuOpenId);
+        TaskResponse todayTask = taskService.findTaskByUserAndDate(learnerUser.getId(), LocalDate.now());
+        ChapterDetailResponse currentChapter = resolveCurrentChapter(activeGoal.getId(), todayTask);
+        String currentChapterTitle = currentChapter == null ? "未定位到当前章节" : currentChapter.getTitle();
+        String currentStepType = currentChapter == null ? "UNKNOWN" : currentChapter.getSteps().stream()
+                .filter(step -> "IN_PROGRESS".equals(step.getStatus()))
+                .map(step -> step.getStepType())
+                .findFirst()
+                .orElse("UNKNOWN");
+
+        throw new IllegalArgumentException("""
+                你当前还有未完成的学习任务：
+                当前目标：%s
+                当前章节：%s
+                当前步骤：%s
+                请先继续发送 /today 完成当前任务；如果你想放弃当前方向，请使用 /clear %s
+                """.formatted(activeGoal.getTopic(), currentChapterTitle, currentStepType, activeGoal.getTopic()).trim());
     }
 
     private void ensureChapterBelongsToGoal(Long goalId, Long chapterId) {
@@ -307,7 +553,10 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
     }
 
     private ChapterDetailResponse resolveCurrentChapter(Long goalId, TaskResponse todayTask) {
-        if (todayTask != null && todayTask.getChapterId() != null) {
+        if (todayTask != null
+                && todayTask.getGoalId() != null
+                && goalId.equals(todayTask.getGoalId())
+                && todayTask.getChapterId() != null) {
             return chapterService.getChapterDetail(todayTask.getChapterId());
         }
         List<ChapterSummaryResponse> chapters = chapterService.listChaptersByGoalId(goalId);
@@ -353,10 +602,10 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
 
     private String resolveDisplayName(String materialType) {
         return switch (materialType) {
-            case "THEORY_DOC" -> "\u7406\u8bba\u6587\u6863";
-            case "DEMO_GUIDE" -> "Demo \u4efb\u52a1";
-            case "EVALUATION_REPORT" -> "\u8bc4\u4f30\u62a5\u544a";
-            case "NEXT_STEP_NOTE" -> "\u4e0b\u4e00\u6b65\u5efa\u8bae";
+            case "THEORY_DOC" -> "理论文档";
+            case "DEMO_GUIDE" -> "Demo 任务";
+            case "EVALUATION_REPORT" -> "评估报告";
+            case "NEXT_STEP_NOTE" -> "下一步建议";
             default -> materialType;
         };
     }
@@ -385,11 +634,7 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         if (hasCoreMaterials(firstChapter.getChapterId())) {
             return;
         }
-        try {
-            chapterService.generateMaterials(firstChapter.getChapterId());
-        } catch (RuntimeException exception) {
-            log.warn("failed to prepare first chapter materials: goalId={}, chapterId={}", goalId, firstChapter.getChapterId(), exception);
-        }
+        chapterService.generateMaterials(firstChapter.getChapterId());
     }
 
     private void pregenerateNextChapterIfNecessary(Long goalId, Long currentChapterId) {
@@ -429,5 +674,78 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
                         && material.getFilePath() != null
                         && !material.getFilePath().isBlank());
         return hasTheory && hasDemo;
+    }
+
+    private void refreshGoalStatusIfCompleted(Long goalId) {
+        LearningGoal goal = learningGoalMapper.selectById(goalId);
+        if (goal == null || !GOAL_ACTIVE.equals(goal.getStatus())) {
+            return;
+        }
+        List<ChapterSummaryResponse> chapters = chapterService.listChaptersByGoalId(goalId);
+        if (!chapters.isEmpty() && chapters.stream().allMatch(chapter -> "COMPLETED".equals(chapter.getStatus()))) {
+            goal.setStatus(GOAL_COMPLETED);
+            goal.setUpdatedAt(LocalDateTime.now());
+            learningGoalMapper.updateById(goal);
+        }
+    }
+
+    private boolean belongsToGoal(DailyTask task, Long goalId) {
+        if (task.getNodeId() != null) {
+            KnowledgeNode node = knowledgeNodeMapper.selectById(task.getNodeId());
+            if (node != null) {
+                return goalId.equals(node.getGoalId());
+            }
+        }
+        if (task.getChapterId() != null) {
+            LearningChapter chapter = learningChapterMapper.selectById(task.getChapterId());
+            return chapter != null && goalId.equals(chapter.getGoalId());
+        }
+        return false;
+    }
+
+    private String normalizeTopic(String topic) {
+        return topic == null ? "" : topic.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private TaskResponse findTodayTaskForGoal(String feishuOpenId, LearningGoal goal, Long userId) {
+        TaskResponse task = taskService.findTaskByUserAndDate(userId, LocalDate.now());
+        if (task == null || !goal.getId().equals(task.getGoalId())) {
+            return null;
+        }
+        return enrichTaskResponse(feishuOpenId, goal, task);
+    }
+
+    private TaskResponse enrichTaskResponse(String feishuOpenId, LearningGoal goal, TaskResponse task) {
+        if (task == null) {
+            return null;
+        }
+        task.setRouteContentUrl(ROUTE_CONTENT_URL_TEMPLATE.formatted(feishuOpenId));
+        task.setRouteViewUrl(ROUTE_VIEW_URL_TEMPLATE.formatted(feishuOpenId));
+        if (task.getRouteFilePath() == null || task.getRouteFilePath().isBlank()) {
+            task.setRouteFilePath(learningRouteService.buildRouteRelativePath(goal.getTopic()));
+        }
+        if (task.getRouteAbsolutePath() == null || task.getRouteAbsolutePath().isBlank()) {
+            task.setRouteAbsolutePath(learningRouteService.resolveAbsolutePath(task.getRouteFilePath()));
+        }
+        if (task.getCurrentChapterNo() == null || task.getTotalChapterCount() == null || task.getTotalChapterCount() == 0) {
+            List<ChapterSummaryResponse> chapters = chapterService.listChaptersByGoalId(goal.getId());
+            task.setTotalChapterCount(chapters.size());
+            if (task.getChapterId() != null) {
+                chapters.stream()
+                        .filter(chapter -> task.getChapterId().equals(chapter.getChapterId()))
+                        .findFirst()
+                        .ifPresent(chapter -> task.setCurrentChapterNo(chapter.getChapterNo()));
+            }
+        }
+        return task;
+    }
+
+    private String escapeHtml(String value) {
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 }

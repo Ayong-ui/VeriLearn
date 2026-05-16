@@ -3,10 +3,14 @@ package com.verilearn.ai.service.impl;
 import com.verilearn.ai.dto.ResolvedAiProviderConfig;
 import com.verilearn.ai.service.AiProviderConfigService;
 import com.verilearn.ai.service.AiRoutingService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AiRoutingServiceImpl implements AiRoutingService {
+
+    private static final Logger log = LoggerFactory.getLogger(AiRoutingServiceImpl.class);
 
     private final AiProviderConfigService aiProviderConfigService;
     private final OpenAiCompatibleChatGateway openAiCompatibleChatGateway;
@@ -22,12 +26,19 @@ public class AiRoutingServiceImpl implements AiRoutingService {
     @Override
     public String chatForUser(Long userId, String systemPrompt, String userPrompt) {
         ResolvedAiProviderConfig config = aiProviderConfigService.resolveConfigByUserId(userId);
-        return openAiCompatibleChatGateway.chat(
+        log.info("routing ai request: userId={}, sourceType={}, providerType={}, modelName={}, baseUrl={}",
+                userId, config.getSourceType(), config.getProviderType(), config.getModelName(), config.getBaseUrl());
+        String response = openAiCompatibleChatGateway.chat(
                 config.getBaseUrl(),
                 config.getApiKey(),
                 config.getModelName(),
                 systemPrompt,
                 userPrompt
         );
+        if (response == null || response.isBlank()) {
+            log.warn("ai request returned empty content: userId={}, sourceType={}, providerType={}, modelName={}",
+                    userId, config.getSourceType(), config.getProviderType(), config.getModelName());
+        }
+        return response;
     }
 }

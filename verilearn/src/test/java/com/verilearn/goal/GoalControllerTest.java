@@ -12,6 +12,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -113,14 +115,17 @@ class GoalControllerTest {
         );
         assertNotNull(savedUser);
 
-        LearningGoal savedGoal = learningGoalMapper.selectOne(
+        List<LearningGoal> goals = learningGoalMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<LearningGoal>()
                         .eq(LearningGoal::getUserId, savedUser.getId())
-                        .last("LIMIT 1")
+                        .orderByDesc(LearningGoal::getId)
         );
-        assertNotNull(savedGoal);
-        assertEquals("Spring Boot", savedGoal.getTopic());
-        assertEquals("intern", savedGoal.getTargetLevel());
-        assertEquals(200, savedGoal.getDailyMinutes());
+        assertEquals(2, goals.size());
+
+        LearningGoal latestGoal = goals.get(0);
+        assertNotNull(latestGoal);
+        assertEquals("Spring Boot", latestGoal.getTopic());
+        assertEquals("intern", latestGoal.getTargetLevel());
+        assertEquals(200, latestGoal.getDailyMinutes());
     }
 }

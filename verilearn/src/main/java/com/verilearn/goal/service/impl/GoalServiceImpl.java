@@ -48,29 +48,15 @@ public class GoalServiceImpl implements GoalService {
             learnerUserMapper.updateById(learnerUser);
         }
 
-        LearningGoal learningGoal = learningGoalMapper.selectOne(
-                new LambdaQueryWrapper<LearningGoal>()
-                        .eq(LearningGoal::getUserId, learnerUser.getId())
-                        .last("LIMIT 1")
-        );
-
-        if (learningGoal == null) {
-            learningGoal = new LearningGoal();
-            learningGoal.setUserId(learnerUser.getId());
-            learningGoal.setCreatedAt(now);
-        }
-
+        LearningGoal learningGoal = new LearningGoal();
+        learningGoal.setUserId(learnerUser.getId());
+        learningGoal.setCreatedAt(now);
         learningGoal.setTopic(request.getTopic());
         learningGoal.setTargetLevel(request.getTargetLevel());
         learningGoal.setDailyMinutes(request.getDailyMinutes());
         learningGoal.setStatus(ACTIVE_STATUS);
         learningGoal.setUpdatedAt(now);
-
-        if (learningGoal.getId() == null) {
-            learningGoalMapper.insert(learningGoal);
-        } else {
-            learningGoalMapper.updateById(learningGoal);
-        }
+        learningGoalMapper.insert(learningGoal);
 
         GoalResponse response = new GoalResponse();
         response.setUserId(learnerUser.getId());

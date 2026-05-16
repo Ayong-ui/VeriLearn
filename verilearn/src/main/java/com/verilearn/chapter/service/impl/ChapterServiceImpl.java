@@ -29,6 +29,8 @@ import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
 import com.verilearn.knowledge.entity.KnowledgeNode;
 import com.verilearn.knowledge.mapper.KnowledgeNodeMapper;
+import com.verilearn.workflow.dto.LearningRouteChapter;
+import com.verilearn.workflow.service.LearningRouteService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +64,7 @@ public class ChapterServiceImpl implements ChapterService {
     private final AiMaterialService aiMaterialService;
     private final AiEvaluationService aiEvaluationService;
     private final ChapterMaterialStorageService chapterMaterialStorageService;
+    private final LearningRouteService learningRouteService;
 
     public ChapterServiceImpl(
             LearningGoalMapper learningGoalMapper,
@@ -72,7 +75,8 @@ public class ChapterServiceImpl implements ChapterService {
             ChapterReviewRecordMapper chapterReviewRecordMapper,
             AiMaterialService aiMaterialService,
             AiEvaluationService aiEvaluationService,
-            ChapterMaterialStorageService chapterMaterialStorageService
+            ChapterMaterialStorageService chapterMaterialStorageService,
+            LearningRouteService learningRouteService
     ) {
         this.learningGoalMapper = learningGoalMapper;
         this.knowledgeNodeMapper = knowledgeNodeMapper;
@@ -83,11 +87,12 @@ public class ChapterServiceImpl implements ChapterService {
         this.aiMaterialService = aiMaterialService;
         this.aiEvaluationService = aiEvaluationService;
         this.chapterMaterialStorageService = chapterMaterialStorageService;
+        this.learningRouteService = learningRouteService;
     }
 
     @Override
     @Transactional
-    public ChapterBootstrapResponse bootstrapChapters(Long goalId) {
+    public ChapterBootstrapResponse bootstrapChapters(Long goalId, List<LearningRouteChapter> routeChapters) {
         LearningGoal goal = getGoalOrThrow(goalId);
         List<KnowledgeNode> nodes = knowledgeNodeMapper.selectList(
                 new LambdaQueryWrapper<KnowledgeNode>()
@@ -103,22 +108,23 @@ public class ChapterServiceImpl implements ChapterService {
 
         LocalDateTime now = LocalDateTime.now();
         int chapterNo = 1;
-        for (KnowledgeNode node : nodes) {
+        for (int i = 0; i < nodes.size(); i++) {
+            KnowledgeNode node = nodes.get(i);
+            LearningRouteChapter routeChapter = routeChapters != null && i < routeChapters.size() ? routeChapters.get(i) : null;
             LearningChapter chapter = new LearningChapter();
             chapter.setGoalId(goal.getId());
             chapter.setNodeId(node.getId());
             chapter.setChapterNo(chapterNo++);
-            chapter.setTitle(node.getNodeName());
-            chapter.setSummary("Learn the theory, complete the demo, and submit feedback for " + node.getNodeName() + ".");
+            chapter.setTitle(routeChapter != null ? routeChapter.getTitle() : node.getNodeName());
+            chapter.setSummary(routeChapter != null && routeChapter.getSummary() != null && !routeChapter.getSummary().isBlank()
+                    ? routeChapter.getSummary()
+                    : "Study the theory, complete the demo, and summarize your understanding.");
             chapter.setStatus(CHAPTER_NOT_STARTED);
             chapter.setCreatedAt(now);
             chapter.setUpdatedAt(now);
             learningChapterMapper.insert(chapter);
 
-            createDefaultSteps(chapter, node.getNodeName(), now);
-            if (chapter.getChapterNo() == 1) {
-                createDefaultMaterials(goal.getTopic(), chapter, node.getNodeName(), now);
-            }
+            createDefaultSteps(chapter, chapter.getTitle(), now);
             createReviewRecord(chapter.getId(), now);
         }
 
@@ -298,7 +304,7 @@ public class ChapterServiceImpl implements ChapterService {
                 goal.getTopic(),
                 chapter,
                 "DEMO_GUIDE",
-                materialResult.getDemoGuideContent(),
+                learningRouteService.ensureDemoAnswerTemplate(materialResult.getDemoGuideContent()),
                 materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
                 now
         );
@@ -401,12 +407,17 @@ public class ChapterServiceImpl implements ChapterService {
 
         ChapterMaterial demoMaterial = findMaterial(chapterId, "DEMO_GUIDE");
         String demoGuide = demoMaterial == null ? step.getInstructionText() : chapterMaterialStorageService.readMaterialContent(demoMaterial.getFilePath(), demoMaterial.getContentText());
+        String learnerAnswerSections = learningRouteService.extractDemoAnswerSections(demoGuide);
+        if (learnerAnswerSections.isBlank()) {
+            throw new IllegalArgumentException("请先在 demo-task.md 的回答区填写完成记录和回答，再提交 /submit-demo。");
+        }
+
         AiDemoEvaluationResult evaluation = aiEvaluationService.evaluateDemoSubmission(
                 goal.getUserId(),
                 goal.getTopic(),
                 chapter.getTitle(),
                 demoGuide,
-                request.getSubmissionSummary(),
+                learnerAnswerSections + "\n\n提交说明：\n" + defaultText(request.getSubmissionSummary()),
                 request.getCodeSnippet(),
                 request.getQuestion()
         );
@@ -476,6 +487,7 @@ public class ChapterServiceImpl implements ChapterService {
         chapter.setUpdatedAt(now);
         learningChapterMapper.updateById(chapter);
         updateReviewStatus(chapterId, REVIEW_PENDING, null, now);
+        refreshGoalStatus(goal.getId(), now);
         response.setChapterStatus(CHAPTER_COMPLETED);
         response.setReviewStatus(REVIEW_PENDING);
         return response;
@@ -488,6 +500,23 @@ public class ChapterServiceImpl implements ChapterService {
                 "Run the demo or exercise and compare the result with the expected behavior.", now);
         insertStep(chapter.getId(), 3, "SUBMIT_FEEDBACK", "Submit your feedback for " + chapterTitle,
                 "Describe what you understood, what was unclear, and whether review is needed.", now);
+    }
+
+    private void refreshGoalStatus(Long goalId, LocalDateTime now) {
+        List<LearningChapter> chapters = learningChapterMapper.selectList(
+                new LambdaQueryWrapper<LearningChapter>()
+                        .eq(LearningChapter::getGoalId, goalId)
+        );
+        if (!chapters.isEmpty() && chapters.stream().allMatch(item -> CHAPTER_COMPLETED.equals(item.getStatus()))) {
+            LearningGoal goal = getGoalOrThrow(goalId);
+            goal.setStatus("COMPLETED");
+            goal.setUpdatedAt(now);
+            learningGoalMapper.updateById(goal);
+        }
+    }
+
+    private String defaultText(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private String resolveMaterialDisplayName(String materialType) {
@@ -515,28 +544,6 @@ public class ChapterServiceImpl implements ChapterService {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
-    }
-
-    private void createDefaultMaterials(String goalTopic, LearningChapter chapter, String chapterTitle, LocalDateTime now) {
-        String theoryContent = "# " + chapterTitle + "\n\nExplain what this chapter is, why it matters, and the key idea to remember.";
-        String theoryPath = chapterMaterialStorageService.createOrUpdateMaterialFile(
-                goalTopic,
-                chapter.getChapterNo(),
-                chapter.getTitle(),
-                "THEORY_DOC",
-                theoryContent
-        );
-        insertMaterial(chapter.getId(), "THEORY_DOC", theoryPath, theoryContent, now);
-
-        String demoContent = "# Demo for " + chapterTitle + "\n\n1. Read the theory.\n2. Run the demo.\n3. Compare the output.\n4. Summarize the result.";
-        String demoPath = chapterMaterialStorageService.createOrUpdateMaterialFile(
-                goalTopic,
-                chapter.getChapterNo(),
-                chapter.getTitle(),
-                "DEMO_GUIDE",
-                demoContent
-        );
-        insertMaterial(chapter.getId(), "DEMO_GUIDE", demoPath, demoContent, now);
     }
 
     private void createReviewRecord(Long chapterId, LocalDateTime now) {

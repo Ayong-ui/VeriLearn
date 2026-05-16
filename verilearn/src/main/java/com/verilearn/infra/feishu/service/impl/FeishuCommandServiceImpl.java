@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.verilearn.ai.dto.AiProviderConfigResponse;
 import com.verilearn.ai.service.AiProviderConfigService;
+import com.verilearn.chapter.config.StorageProperties;
 import com.verilearn.chapter.dto.ChapterDemoEvaluationResponse;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
 import com.verilearn.infra.feishu.config.FeishuProperties;
@@ -12,34 +13,55 @@ import com.verilearn.infra.feishu.dto.FeishuEventRequest;
 import com.verilearn.infra.feishu.service.FeishuCommandService;
 import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.task.dto.TaskResponse;
+import com.verilearn.workflow.dto.LearningRouteContentResponse;
+import com.verilearn.workflow.dto.LearnerCurrentContextResponse;
 import com.verilearn.workflow.dto.LearnerDashboardResponse;
 import com.verilearn.workflow.dto.LearnerDemoSubmissionRequest;
 import com.verilearn.workflow.dto.LearnerMaterialReference;
 import com.verilearn.workflow.dto.LearnerSetupRequest;
 import com.verilearn.workflow.dto.LearnerSetupResponse;
+import com.verilearn.workflow.dto.TopicAnalysisResult;
+import com.verilearn.workflow.dto.TopicOptionSelection;
 import com.verilearn.workflow.service.LearnerWorkflowService;
+import com.verilearn.workflow.service.PendingTopicSelectionService;
+import com.verilearn.workflow.service.TopicValidationService;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class FeishuCommandServiceImpl implements FeishuCommandService {
+
+    private static final String DEFAULT_AI_CONFIG_PATH_TEMPLATE = "/ai/provider-config-page?openId=%s";
 
     private final ObjectMapper objectMapper;
     private final FeishuProperties feishuProperties;
     private final LearnerWorkflowService learnerWorkflowService;
     private final AiProviderConfigService aiProviderConfigService;
+    private final TopicValidationService topicValidationService;
+    private final PendingTopicSelectionService pendingTopicSelectionService;
+    private final StorageProperties storageProperties;
 
     public FeishuCommandServiceImpl(
             ObjectMapper objectMapper,
             FeishuProperties feishuProperties,
             LearnerWorkflowService learnerWorkflowService,
-            AiProviderConfigService aiProviderConfigService
+            AiProviderConfigService aiProviderConfigService,
+            TopicValidationService topicValidationService,
+            PendingTopicSelectionService pendingTopicSelectionService,
+            StorageProperties storageProperties
     ) {
         this.objectMapper = objectMapper;
         this.feishuProperties = feishuProperties;
         this.learnerWorkflowService = learnerWorkflowService;
         this.aiProviderConfigService = aiProviderConfigService;
+        this.topicValidationService = topicValidationService;
+        this.pendingTopicSelectionService = pendingTopicSelectionService;
+        this.storageProperties = storageProperties;
     }
 
     @Override
@@ -66,15 +88,27 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
     @Override
     public FeishuCommandResponse handleCommand(FeishuEventRequest request) {
         String openId = extractOpenId(request);
-        String commandLine = extractCommandText(request);
-        String normalizedCommand = commandLine == null ? "" : commandLine.trim();
+        String rawText = extractCommandText(request);
+        String text = rawText == null ? "" : rawText.trim();
 
-        if (normalizedCommand.isBlank()) {
-            return failure(openId, "", "没有识别到命令内容，请发送 /start 学习主题、/today、/progress、/dashboard、/submit-demo 或 /ai。");
+        if (text.isBlank()) {
+            return failure(openId, "", "没有识别到命令内容。请发送 /start、/today、/progress、/dashboard、/submit-demo、/paths 或 /ai。");
         }
 
-        String[] parts = normalizedCommand.split("\\s+", 2);
-        String command = parts[0].toLowerCase();
+        TopicOptionSelection pendingSelection = pendingTopicSelectionService.get(openId);
+        if (pendingSelection != null && !text.startsWith("/")) {
+            if (text.matches("\\d+")) {
+                return handlePendingTopicSelection(openId, pendingSelection, text);
+            }
+            return failure(openId, text, buildPendingSelectionHint(pendingSelection));
+        }
+
+        if ("我完成了".equals(text)) {
+            return handleSubmitDemo(openId, "我完成了");
+        }
+
+        String[] parts = text.split("\\s+", 2);
+        String command = parts[0].toLowerCase(Locale.ROOT);
         String argument = parts.length > 1 ? parts[1].trim() : "";
 
         return switch (command) {
@@ -83,20 +117,76 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
             case "/progress" -> handleProgress(openId);
             case "/dashboard" -> handleDashboard(openId);
             case "/submit-demo" -> handleSubmitDemo(openId, argument);
+            case "/clear" -> handleClearRouteCommand(openId, argument);
+            case "/paths" -> handlePaths(openId);
             case "/ai" -> handleAiCommand(openId, argument);
-            default -> failure(openId, command, "暂不支持该命令，请使用 /start、/today、/progress、/dashboard、/submit-demo 或 /ai。");
+            default -> failure(openId, command, "暂不支持这个命令。请使用 /start、/today、/progress、/dashboard、/submit-demo、/clear、/paths 或 /ai。");
         };
+    }
+
+    private FeishuCommandResponse handlePendingTopicSelection(String openId, TopicOptionSelection pendingSelection, String text) {
+        int selectedIndex = Integer.parseInt(text) - 1;
+        if (selectedIndex < 0 || selectedIndex >= pendingSelection.getOptions().size()) {
+            return failure(openId, text, buildPendingSelectionHint(pendingSelection));
+        }
+
+        pendingTopicSelectionService.consume(openId);
+        String selectedTopic = pendingSelection.getOptions().get(selectedIndex);
+        return startTopic(openId, selectedTopic);
     }
 
     private FeishuCommandResponse handleStart(String openId, String argument) {
         if (argument.isBlank()) {
-            return failure(openId, "/start", "请在 /start 后面带上学习主题，例如：/start Java 后端");
+            return failure(openId, "/start", "请在 /start 后面带上学习主题，例如：/start Linux 或 /start Spring Boot Controller");
+        }
+
+        pendingTopicSelectionService.clear(openId);
+        TopicAnalysisResult analysis = topicValidationService.analyzeTopic(argument);
+        if (analysis.getKind() == TopicAnalysisResult.TopicKind.REJECT) {
+            return failure(openId, "/start", analysis.getMessage());
+        }
+        if (analysis.getKind() == TopicAnalysisResult.TopicKind.REQUIRE_OPTIONS) {
+            try {
+                List<String> options = learnerWorkflowService.generateTopicOptions(openId, argument);
+                TopicOptionSelection selection = new TopicOptionSelection();
+                selection.setOriginalTopic(argument);
+                selection.setOptions(options);
+                selection.setCreatedAt(LocalDateTime.now());
+                pendingTopicSelectionService.save(openId, selection);
+                return success(openId, "/start", buildTopicOptionsReply(argument, options));
+            } catch (IllegalArgumentException | IllegalStateException exception) {
+                return failure(openId, "/start", exception.getMessage());
+            }
+        }
+        return startTopic(openId, argument);
+    }
+
+    private FeishuCommandResponse startTopic(String openId, String topic) {
+        LearnerDashboardResponse activeDashboard = getActiveDashboardOrNull(openId);
+        if (activeDashboard != null && "ACTIVE".equalsIgnoreCase(activeDashboard.getGoalStatus())) {
+            String currentChapterTitle = activeDashboard.getCurrentChapter() == null
+                    ? "未定位到当前章节"
+                    : defaultText(activeDashboard.getCurrentChapter().getTitle(), "未定位到当前章节");
+            String currentStep = activeDashboard.getTodayTask() == null
+                    ? "UNKNOWN"
+                    : defaultText(activeDashboard.getTodayTask().getStepType(), "UNKNOWN");
+            return failure(
+                    openId,
+                    "/start",
+                    """
+                            你当前还有未完成的学习任务：
+                            当前目标：%s
+                            当前章节：%s
+                            当前步骤：%s
+                            请先继续发送 /today 完成当前任务；如果你想放弃当前方向，请使用 /clear %s
+                            """.formatted(activeDashboard.getTopic(), currentChapterTitle, currentStep, activeDashboard.getTopic()).trim()
+            );
         }
 
         try {
             LearnerSetupRequest request = new LearnerSetupRequest();
             request.setFeishuOpenId(openId);
-            request.setTopic(argument);
+            request.setTopic(topic);
             LearnerSetupResponse response = learnerWorkflowService.setupLearner(request);
             return success(
                     openId,
@@ -106,7 +196,8 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
                             默认每日学习时长：%d 分钟
                             已初始化知识点：%d 个
                             已初始化章节：%d 个
-                            接下来发送 /today 查看今天的任务。
+
+                            接下来请发送 /today 查看今天的学习任务。
                             """.formatted(
                             response.getTopic(),
                             response.getDailyMinutes(),
@@ -114,44 +205,63 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
                             response.getChapterCount()
                     ).trim()
             );
-        } catch (IllegalArgumentException exception) {
-            return failure(openId, "/start", exception.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/start", sanitizeWorkflowMessage(exception.getMessage()));
         }
     }
 
     private FeishuCommandResponse handleToday(String openId) {
         try {
             TaskResponse task = learnerWorkflowService.generateTodayTask(openId);
+            LearnerDashboardResponse dashboard = learnerWorkflowService.getDashboard(openId);
+            String routeOverview = buildRouteOverview(dashboard.getChapters());
+            int currentChapterNo = task.getCurrentChapterNo() == null ? dashboard.getCurrentChapterNo() : task.getCurrentChapterNo();
+            int totalChapterCount = task.getTotalChapterCount() == null || task.getTotalChapterCount() == 0
+                    ? dashboard.getTotalChapterCount()
+                    : task.getTotalChapterCount();
+
             return success(
                     openId,
                     "/today",
                     """
                             今日任务：%s
+                            当前进度：第 %d / %d 章
                             当前章节：%s
                             当前步骤：%s
                             任务状态：%s
-                            理论文档：%s
-                            理论内容入口：%s
-                            Demo 文档：%s
-                            Demo 内容入口：%s
+
+                            学习路线：
+                            %s
+
+                            路线入口：
+                            %s
+
+                            先看理论：
+                            %s
+
+                            再做 Demo：
+                            %s
+
                             验证项数量：%d
 
-                            完成 Demo 后可以直接发送：
-                            /submit-demo 我完成了今天的 Demo，并能说明关键原理
+                            完成 Demo 后，直接发送：
+                            /submit-demo 我完成了
                             """.formatted(
-                            task.getGoalText(),
+                            defaultText(task.getGoalText(), "今日学习任务"),
+                            currentChapterNo,
+                            totalChapterCount,
                             defaultText(task.getChapterTitle(), "未分配章节"),
                             defaultText(task.getStepType(), "READ_THEORY"),
-                            task.getStatus(),
-                            defaultText(task.getTheoryFilePath(), "理论文档待生成"),
-                            defaultText(task.getTheoryViewUrl(), "理论查看入口待生成"),
-                            defaultText(task.getDemoFilePath(), "Demo 文档待生成"),
-                            defaultText(task.getDemoViewUrl(), "Demo 查看入口待生成"),
+                            defaultText(task.getStatus(), "PENDING"),
+                            routeOverview,
+                            defaultText(toAbsoluteUrl(task.getRouteViewUrl()), "学习路线暂未生成"),
+                            defaultText(toAbsoluteUrl(task.getTheoryViewUrl()), "理论文档暂未生成"),
+                            defaultText(toAbsoluteUrl(task.getDemoViewUrl()), "Demo 文档暂未生成"),
                             task.getValidationItems() == null ? 0 : task.getValidationItems().size()
                     ).trim()
             );
-        } catch (IllegalArgumentException exception) {
-            return failure(openId, "/today", exception.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/today", sanitizeWorkflowMessage(exception.getMessage()));
         }
     }
 
@@ -163,8 +273,12 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
                     "/progress",
                     """
                             当前主题：%s
-                            知识点：总计 %d，进行中 %d，已通过 %d，待重试 %d
-                            章节：总计 %d，进行中 %d，已完成 %d，待复习 %d
+
+                            知识点进度：
+                            总计 %d，进行中 %d，已通过 %d，待重试 %d
+
+                            章节进度：
+                            总计 %d，进行中 %d，已完成 %d，待复习 %d
                             """.formatted(
                             progress.getTopic(),
                             progress.getTotalNodes(),
@@ -177,88 +291,159 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
                             progress.getPendingReviewChapters()
                     ).trim()
             );
-        } catch (IllegalArgumentException exception) {
-            return failure(openId, "/progress", exception.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/progress", sanitizeWorkflowMessage(exception.getMessage()));
         }
     }
 
     private FeishuCommandResponse handleDashboard(String openId) {
         try {
             LearnerDashboardResponse dashboard = learnerWorkflowService.getDashboard(openId);
-            List<ChapterSummaryResponse> chapters = dashboard.getChapters();
-            String currentChapter = chapters == null || chapters.isEmpty() ? "暂无章节" : chapters.get(0).getTitle();
             return success(
                     openId,
                     "/dashboard",
                     """
                             当前主题：%s
-                            今日任务：%s
-                            章节总数：%d
+                            路线状态：%s
+                            当前进度：第 %d / %d 章
                             待复习章节：%d
-                            当前看到的章节：%s
-                            当前材料入口：
+
+                            路线入口：
+                            %s
+
+                            当前材料：
                             %s
                             """.formatted(
                             dashboard.getTopic(),
-                            dashboard.getTodayTask() == null ? "今日还没有生成任务" : dashboard.getTodayTask().getGoalText(),
-                            dashboard.getChapterCount(),
+                            defaultText(dashboard.getGoalStatus(), "ACTIVE"),
+                            dashboard.getCurrentChapterNo(),
+                            dashboard.getTotalChapterCount(),
                             dashboard.getPendingReviewCount(),
-                            currentChapter,
+                            defaultText(toAbsoluteUrl(dashboard.getRouteViewUrl()), "学习路线暂未生成"),
                             buildMaterialOverview(dashboard.getCurrentMaterials())
                     ).trim()
             );
-        } catch (IllegalArgumentException exception) {
-            return failure(openId, "/dashboard", exception.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/dashboard", sanitizeWorkflowMessage(exception.getMessage()));
         }
     }
 
     private FeishuCommandResponse handleSubmitDemo(String openId, String argument) {
-        if (argument.isBlank()) {
-            return failure(openId, "/submit-demo", "请发送 /submit-demo 你的完成说明。也兼容旧格式：/submit-demo 章节ID 你的完成说明");
-        }
-
-        Long chapterId = null;
-        String submissionSummary = argument.trim();
-        String[] parts = argument.split("\\s+", 2);
-        if (parts.length >= 2) {
-            try {
-                chapterId = Long.parseLong(parts[0]);
-                submissionSummary = parts[1].trim();
-            } catch (NumberFormatException ignored) {
-                submissionSummary = argument.trim();
-            }
-        }
-
-        if (submissionSummary.isBlank()) {
-            return failure(openId, "/submit-demo", "请在 /submit-demo 后补充你的完成说明。");
-        }
-
+        String submissionSummary = argument == null || argument.isBlank() ? "我完成了" : argument.trim();
         try {
             LearnerDemoSubmissionRequest request = new LearnerDemoSubmissionRequest();
             request.setSubmissionSummary(submissionSummary);
-            ChapterDemoEvaluationResponse response = chapterId == null
-                    ? learnerWorkflowService.evaluateCurrentDemoSubmission(openId, request)
-                    : learnerWorkflowService.evaluateCurrentDemoSubmission(openId, chapterId, request);
+            ChapterDemoEvaluationResponse response = learnerWorkflowService.evaluateCurrentDemoSubmission(openId, request);
             return success(
                     openId,
                     "/submit-demo",
                     """
                             Demo 评估已完成
-                            %s
                             掌握度：%s
                             章节状态：%s
-                            评估报告：%s
-                            下一步建议：%s
+
+                            查看评估报告：
+                            %s
+
+                            查看下一步建议：
+                            %s
                             """.formatted(
-                            chapterId == null ? "已按当前学习上下文自动定位章节" : "章节ID：" + chapterId,
                             defaultText(response.getUnderstandingLevel(), "UNKNOWN"),
                             defaultText(response.getChapterStatus(), "IN_PROGRESS"),
-                            defaultText(response.getEvaluationViewUrl(), "评估报告待生成"),
-                            defaultText(response.getNextStepViewUrl(), "下一步建议待生成")
+                            defaultText(toAbsoluteUrl(response.getEvaluationViewUrl()), "评估报告暂未生成"),
+                            defaultText(toAbsoluteUrl(response.getNextStepViewUrl()), "下一步建议暂未生成")
                     ).trim()
             );
-        } catch (IllegalArgumentException exception) {
-            return failure(openId, "/submit-demo", exception.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/submit-demo", sanitizeWorkflowMessage(exception.getMessage()));
+        }
+    }
+
+    private FeishuCommandResponse handleClearRouteCommand(String openId, String argument) {
+        if (argument == null || argument.isBlank()) {
+            return failure(openId, "/clear", "请使用 /clear 主题，例如：/clear MySQL");
+        }
+
+        LearnerDashboardResponse activeDashboard = getActiveDashboardOrNull(openId);
+        if (activeDashboard == null || !"ACTIVE".equalsIgnoreCase(activeDashboard.getGoalStatus())) {
+            return failure(openId, "/clear", "当前没有可清理的进行中学习路线。");
+        }
+        if (!normalize(activeDashboard.getTopic()).equals(normalize(argument))) {
+            return failure(openId, "/clear", "当前进行中的学习路线不是 " + argument + "。");
+        }
+
+        try {
+            learnerWorkflowService.clearLearningRoute(openId, argument);
+            pendingTopicSelectionService.clear(openId);
+            return success(
+                    openId,
+                    "/clear",
+                    """
+                            已清理学习路线：%s
+                            该主题关联的任务、章节、材料、验证记录和 learning-space 文件都已删除。
+                            现在你可以重新发送 /start 新主题，开始新的学习路线。
+                            """.formatted(argument).trim()
+            );
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/clear", sanitizeWorkflowMessage(exception.getMessage()));
+        }
+    }
+
+    private FeishuCommandResponse handleClear(String openId, String argument) {
+        if (argument.isBlank()) {
+            return failure(openId, "/clear", "请使用 /clear 主题，例如：/clear MySQL");
+        }
+
+        LearnerDashboardResponse activeDashboard = getActiveDashboardOrNull(openId);
+        if (activeDashboard == null || !"ACTIVE".equalsIgnoreCase(activeDashboard.getGoalStatus())) {
+            return failure(openId, "/clear", "当前没有可清理的进行中学习路线。");
+        }
+        if (!normalize(activeDashboard.getTopic()).equals(normalize(argument))) {
+            return failure(openId, "/clear", "当前进行中的学习路线不是 " + argument + "。");
+        }
+
+        try {
+            learnerWorkflowService.clearLearningRoute(openId, argument);
+            pendingTopicSelectionService.clear(openId);
+            return success(
+                    openId,
+                    "/clear",
+                    """
+                            已清理学习路线：%s
+                            该主题关联的任务、章节、材料、验证记录和 learning-space 文件已删除。
+                            现在你可以重新发送 /start 新主题 开始新的学习路线。
+                            """.formatted(argument).trim()
+            );
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/clear", sanitizeWorkflowMessage(exception.getMessage()));
+        }
+    }
+
+    private FeishuCommandResponse handlePaths(String openId) {
+        try {
+            LearningRouteContentResponse route = learnerWorkflowService.getLearningRoute(openId);
+            LearnerCurrentContextResponse context = learnerWorkflowService.getCurrentContext(openId);
+            TaskResponse todayTask = context.getTodayTask();
+            return success(
+                    openId,
+                    "/paths",
+                    """
+                            当前学习路线绝对路径：
+                            - learning-route.md：%s
+                            - theory.md：%s
+                            - demo-task.md：%s
+                            - evaluation-report.md：%s
+                            - next-step.md：%s
+                            """.formatted(
+                            defaultText(route.getAbsoluteFilePath(), "暂无"),
+                            toAbsoluteLearningSpacePath(todayTask == null ? null : todayTask.getTheoryFilePath()),
+                            toAbsoluteLearningSpacePath(todayTask == null ? null : todayTask.getDemoFilePath()),
+                            toAbsoluteLearningSpacePath(context.getEvaluationFilePath()),
+                            toAbsoluteLearningSpacePath(context.getNextStepFilePath())
+                    ).trim()
+            );
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/paths", sanitizeWorkflowMessage(exception.getMessage()));
         }
     }
 
@@ -269,12 +454,12 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
         }
 
         String[] parts = normalizedArgument.split("\\s+");
-        String subCommand = parts[0].toLowerCase();
+        String subCommand = parts[0].toLowerCase(Locale.ROOT);
         return switch (subCommand) {
             case "current" -> handleAiCurrent(openId);
             case "switch" -> {
                 if (parts.length < 2) {
-                    yield failure(openId, "/ai", "请使用 /ai switch 配置ID。例如：/ai switch 2");
+                    yield failure(openId, "/ai", "请使用 /ai switch 配置ID，例如：/ai switch 2");
                 }
                 yield handleAiSwitch(openId, parts[1]);
             }
@@ -287,8 +472,8 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
                             2. 发送 /ai switch 配置ID 切换到已保存模型
                             3. 如需新增模型配置，请打开安全配置页：
                                %s
-                            4. 正式产品会通过飞书安全入口录入密钥，不建议在聊天消息里直接发送 API Key
-                            """.formatted(buildAiConfigPagePath(openId)).trim()
+                            4. 不建议在聊天消息里直接发送 API Key
+                            """.formatted(buildAiConfigPageUrl(openId)).trim()
             );
             default -> failure(openId, "/ai", "不支持的 AI 命令，请使用 /ai current、/ai switch 配置ID 或 /ai config。");
         };
@@ -321,8 +506,8 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
                                     : "如需切换到其他已保存模型，请发送 /ai switch 配置ID"
                     ).trim()
             );
-        } catch (IllegalArgumentException exception) {
-            return failure(openId, "/ai", exception.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/ai", sanitizeWorkflowMessage(exception.getMessage()));
         }
     }
 
@@ -350,8 +535,8 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
             );
         } catch (NumberFormatException exception) {
             return failure(openId, "/ai", "配置ID 必须是数字，请使用 /ai switch 配置ID。");
-        } catch (IllegalArgumentException exception) {
-            return failure(openId, "/ai", exception.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/ai", sanitizeWorkflowMessage(exception.getMessage()));
         }
     }
 
@@ -402,26 +587,125 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
         return response;
     }
 
-    private String defaultText(String value, String defaultValue) {
-        return value == null || value.isBlank() ? defaultValue : value;
+    private String buildTopicOptionsReply(String originalTopic, List<String> options) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("“").append(originalTopic).append("”范围较大，请先选择一个更具体的学习方向：\n");
+        for (int i = 0; i < options.size(); i++) {
+            builder.append(i + 1).append(". ").append(options.get(i)).append("\n");
+        }
+        builder.append("\n请直接回复数字 1-").append(options.size()).append(" 继续。");
+        return builder.toString().trim();
+    }
+
+    private String buildPendingSelectionHint(TopicOptionSelection selection) {
+        return "当前正在等待你为主题“" + selection.getOriginalTopic() + "”选择子方向，请直接回复 1-" + selection.getOptions().size() + "。";
+    }
+
+    private String buildRouteOverview(List<ChapterSummaryResponse> chapters) {
+        if (chapters == null || chapters.isEmpty()) {
+            return "暂无学习路线";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (ChapterSummaryResponse chapter : chapters) {
+            builder.append(chapter.getChapterNo())
+                    .append(". ")
+                    .append(defaultText(chapter.getTitle(), "未命名章节"))
+                    .append("（")
+                    .append(toReadableStatus(chapter.getStatus()))
+                    .append("）")
+                    .append("\n");
+        }
+        return builder.toString().trim();
+    }
+
+    private String toReadableStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return "未知";
+        }
+        return switch (status) {
+            case "NOT_STARTED" -> "未开始";
+            case "IN_PROGRESS" -> "进行中";
+            case "COMPLETED" -> "已完成";
+            case "PENDING" -> "待处理";
+            case "PENDING_REVIEW" -> "待复习";
+            default -> status;
+        };
     }
 
     private String buildMaterialOverview(List<LearnerMaterialReference> materials) {
         if (materials == null || materials.isEmpty()) {
             return "暂无材料";
         }
+
         StringBuilder builder = new StringBuilder();
         for (LearnerMaterialReference material : materials) {
             builder.append("- ")
                     .append(defaultText(material.getDisplayName(), material.getMaterialType()))
                     .append("：")
-                    .append(defaultText(material.getViewUrl(), "查看入口待生成"))
+                    .append(defaultText(toAbsoluteUrl(material.getViewUrl()), "查看入口待生成"))
                     .append("\n");
         }
         return builder.toString().trim();
     }
 
-    private String buildAiConfigPagePath(String openId) {
-        return "/ai/provider-config-page?openId=" + openId;
+    private String buildAiConfigPageUrl(String openId) {
+        return toAbsoluteUrl(DEFAULT_AI_CONFIG_PATH_TEMPLATE.formatted(openId));
+    }
+
+    private String toAbsoluteUrl(String pathOrUrl) {
+        if (pathOrUrl == null || pathOrUrl.isBlank()) {
+            return null;
+        }
+        if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+            return pathOrUrl;
+        }
+        String publicBaseUrl = feishuProperties.getPublicBaseUrl();
+        if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
+            return pathOrUrl;
+        }
+
+        String normalizedBase = publicBaseUrl.endsWith("/") ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1) : publicBaseUrl;
+        String normalizedPath = pathOrUrl.startsWith("/") ? pathOrUrl : "/" + pathOrUrl;
+        return normalizedBase + normalizedPath;
+    }
+
+    private String toAbsoluteLearningSpacePath(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            return "暂无";
+        }
+        Path root = Paths.get(storageProperties.getLearningSpaceRoot());
+        return root.resolve(relativePath).normalize().toAbsolutePath().toString();
+    }
+
+    private LearnerDashboardResponse getActiveDashboardOrNull(String openId) {
+        try {
+            return learnerWorkflowService.getDashboard(openId);
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return null;
+        }
+    }
+
+    private String sanitizeWorkflowMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return "操作失败，请稍后重试。";
+        }
+        if (message.contains("/start") || message.contains("/today") || message.contains("/clear") || message.contains("demo-task.md")) {
+            return message;
+        }
+        if (message.contains("current demo step not found")) {
+            return "当前还没有进入 Demo 步骤，请先按今日任务完成前置学习。";
+        }
+        if (message.contains("knowledge node not found")) {
+            return "旧任务数据已失效，请重新发送 /today 生成新的学习任务。";
+        }
+        return message;
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String defaultText(String value, String defaultValue) {
+        return value == null || value.isBlank() ? defaultValue : value;
     }
 }

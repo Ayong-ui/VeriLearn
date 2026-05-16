@@ -8,12 +8,17 @@ import com.verilearn.chapter.dto.ChapterMaterialContentResponse;
 import com.verilearn.chapter.dto.ChapterStepSubmitRequest;
 import com.verilearn.chapter.dto.ChapterStepSubmitResponse;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
+import com.verilearn.workflow.dto.LearningRouteChapter;
 
 import java.util.List;
 
 public interface ChapterService {
 
-    ChapterBootstrapResponse bootstrapChapters(Long goalId);
+    default ChapterBootstrapResponse bootstrapChapters(Long goalId) {
+        return bootstrapChapters(goalId, List.of());
+    }
+
+    ChapterBootstrapResponse bootstrapChapters(Long goalId, List<LearningRouteChapter> routeChapters);
 
     List<ChapterSummaryResponse> listChaptersByGoalId(Long goalId);
 
