@@ -529,20 +529,29 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         LearnerUser learnerUser = getLearnerByOpenId(feishuOpenId);
         TaskResponse todayTask = taskService.findTaskByUserAndDate(learnerUser.getId(), LocalDate.now());
         ChapterDetailResponse currentChapter = resolveCurrentChapter(activeGoal.getId(), todayTask);
-        String currentChapterTitle = currentChapter == null ? "未定位到当前章节" : currentChapter.getTitle();
-        String currentStepType = currentChapter == null ? "UNKNOWN" : currentChapter.getSteps().stream()
+        String readableCurrentChapterTitle = currentChapter == null ? "未定位到当前章节" : currentChapter.getTitle();
+        String readableCurrentStep = currentChapter == null ? "未定位到当前步骤" : currentChapter.getSteps().stream()
                 .filter(step -> "IN_PROGRESS".equals(step.getStatus()))
-                .map(step -> step.getStepType())
+                .map(step -> switch (step.getStepType()) {
+                    case "READ_THEORY" -> "先看理论";
+                    case "RUN_DEMO" -> "再做 Demo";
+                    case "SUBMIT_DEMO", "SUBMIT_VALIDATION" -> "提交结果";
+                    case "REVIEW_SUMMARY" -> "查看评估";
+                    default -> step.getStepType();
+                })
                 .findFirst()
-                .orElse("UNKNOWN");
+                .orElse("未定位到当前步骤");
+        if (activeGoal.getTopic() != null) {
+            throw new IllegalArgumentException("""
+                    你当前还有未完成的学习任务：
+                    当前主题：%s
+                    当前章节：%s
+                    当前步骤：%s
 
-        throw new IllegalArgumentException("""
-                你当前还有未完成的学习任务：
-                当前目标：%s
-                当前章节：%s
-                当前步骤：%s
-                请先继续发送 /today 完成当前任务；如果你想放弃当前方向，请使用 /clear %s
-                """.formatted(activeGoal.getTopic(), currentChapterTitle, currentStepType, activeGoal.getTopic()).trim());
+                    请先发送 /today 继续当前任务。
+                    如果你确认要放弃当前方向，再使用 /clear %s。
+                    """.formatted(activeGoal.getTopic(), readableCurrentChapterTitle, readableCurrentStep, activeGoal.getTopic()).trim());
+        }
     }
 
     private void ensureChapterBelongsToGoal(Long goalId, Long chapterId) {

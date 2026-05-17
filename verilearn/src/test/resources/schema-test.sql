@@ -1,3 +1,16 @@
+DROP TABLE IF EXISTS diversion_record;
+DROP TABLE IF EXISTS validation_submission;
+DROP TABLE IF EXISTS validation_item;
+DROP TABLE IF EXISTS daily_task;
+DROP TABLE IF EXISTS chapter_review_record;
+DROP TABLE IF EXISTS chapter_material;
+DROP TABLE IF EXISTS chapter_step;
+DROP TABLE IF EXISTS learning_chapter;
+DROP TABLE IF EXISTS knowledge_node;
+DROP TABLE IF EXISTS learner_ai_provider_config;
+DROP TABLE IF EXISTS learning_goal;
+DROP TABLE IF EXISTS learner_user;
+
 CREATE TABLE IF NOT EXISTS learner_user (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     feishu_open_id VARCHAR(64) NOT NULL UNIQUE,

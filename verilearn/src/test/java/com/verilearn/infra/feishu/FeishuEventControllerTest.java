@@ -62,6 +62,17 @@ class FeishuEventControllerTest {
     }
 
     @Test
+    void shouldRejectStartCommandWithoutTopic() throws Exception {
+        mockMvc.perform(post("/api/feishu/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(messageEvent("ou_test_start_empty", "/start")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.success").value(false))
+                .andExpect(jsonPath("$.data.command").value("/start"))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("请在 /start 后面输入学习主题")));
+    }
+
+    @Test
     void shouldHandleStartCommand() throws Exception {
         LearnerSetupResponse response = new LearnerSetupResponse();
         response.setTopic("Java 后端");
@@ -76,9 +87,34 @@ class FeishuEventControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/start"))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("Java 后端")));
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("已为你初始化学习主题：Java 后端")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("已生成知识点：4 个")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/today")));
 
         verify(feishuMessagingService).sendTextMessage(eq("ou_test_start"), contains("Java 后端"));
+    }
+
+    @Test
+    void shouldBlockStartWhenActiveRouteExists() throws Exception {
+        LearnerDashboardResponse dashboard = new LearnerDashboardResponse();
+        dashboard.setTopic("MySQL");
+        dashboard.setGoalStatus("ACTIVE");
+        TaskResponse todayTask = new TaskResponse();
+        todayTask.setStepType("READ_THEORY");
+        dashboard.setTodayTask(todayTask);
+        var currentChapter = new com.verilearn.chapter.dto.ChapterDetailResponse();
+        currentChapter.setTitle("索引基础");
+        dashboard.setCurrentChapter(currentChapter);
+        when(learnerWorkflowService.getDashboard(eq("ou_test_start_blocked"))).thenReturn(dashboard);
+
+        mockMvc.perform(post("/api/feishu/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(messageEvent("ou_test_start_blocked", "/start Redis")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.success").value(false))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("你当前还有未完成的学习任务")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("当前主题：MySQL")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("请先发送 /today")));
     }
 
     @Test
@@ -91,17 +127,14 @@ class FeishuEventControllerTest {
         taskResponse.setStepType("READ_THEORY");
         taskResponse.setStatus("PENDING");
         taskResponse.setRouteViewUrl("http://localhost:8080/learning-routes/ou_test_today/view");
-        taskResponse.setTheoryFilePath("spring-boot/01-spring-boot-fundamentals/user/theory/theory.md");
-        taskResponse.setTheoryContentUrl("/api/materials/101/content");
         taskResponse.setTheoryViewUrl("/materials/101/view");
-        taskResponse.setDemoFilePath("spring-boot/01-spring-boot-fundamentals/user/demo/demo-task.md");
-        taskResponse.setDemoContentUrl("/api/materials/102/content");
         taskResponse.setDemoViewUrl("/materials/102/view");
         taskResponse.setValidationItems(List.of());
 
         LearnerDashboardResponse dashboard = new LearnerDashboardResponse();
         dashboard.setTopic("Spring Boot fundamentals");
-        dashboard.setChapterCount(4);
+        dashboard.setCurrentChapterNo(1);
+        dashboard.setTotalChapterCount(4);
         dashboard.setChapters(List.of(
                 chapter(1, "Spring Boot fundamentals", "IN_PROGRESS"),
                 chapter(2, "Spring MVC basics", "NOT_STARTED")
@@ -115,18 +148,20 @@ class FeishuEventControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/today"))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("学习 Spring Boot fundamentals")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("今日任务")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("路线概览")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("先看理论")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/101/view")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("再做 Demo")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/102/view")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/submit-demo")));
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("本次验证项")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/submit-demo 我完成了")));
     }
 
     @Test
     void shouldHandleProgressCommand() throws Exception {
         ProgressResponse progressResponse = new ProgressResponse();
         progressResponse.setTopic("Java 后端");
+        progressResponse.setGoalStatus("IN_PROGRESS");
+        progressResponse.setTargetLevel("intern");
         progressResponse.setTotalNodes(4);
         progressResponse.setInProgressNodes(1);
         progressResponse.setPassedNodes(2);
@@ -143,18 +178,20 @@ class FeishuEventControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/progress"))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("Java 后端")));
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("当前主题：Java 后端")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("知识点进度")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("章节进度")));
     }
 
     @Test
     void shouldHandleDashboardCommand() throws Exception {
         LearnerDashboardResponse dashboard = new LearnerDashboardResponse();
         dashboard.setTopic("Java 后端");
-        dashboard.setChapterCount(4);
+        dashboard.setGoalStatus("IN_PROGRESS");
+        dashboard.setCurrentChapterNo(1);
+        dashboard.setTotalChapterCount(4);
         dashboard.setPendingReviewCount(1);
-        TaskResponse taskResponse = new TaskResponse();
-        taskResponse.setGoalText("学习 Spring Boot fundamentals");
-        dashboard.setTodayTask(taskResponse);
+        dashboard.setRouteViewUrl("/learning-routes/ou_test_dashboard/view");
         dashboard.setCurrentMaterials(List.of(
                 new LearnerMaterialReference(101L, "THEORY_DOC", "理论文档", "path/theory.md", "/api/materials/101/content", "/materials/101/view"),
                 new LearnerMaterialReference(102L, "DEMO_GUIDE", "Demo 任务", "path/demo-task.md", "/api/materials/102/content", "/materials/102/view")
@@ -167,7 +204,9 @@ class FeishuEventControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/dashboard"))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("Java 后端")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("当前主题：Java 后端")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("路线入口")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("当前材料")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/101/view")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/102/view")));
     }
@@ -177,9 +216,7 @@ class FeishuEventControllerTest {
         ChapterDemoEvaluationResponse response = new ChapterDemoEvaluationResponse();
         response.setUnderstandingLevel("HIGH");
         response.setChapterStatus("IN_PROGRESS");
-        response.setEvaluationContentUrl("/api/materials/201/content");
         response.setEvaluationViewUrl("/materials/201/view");
-        response.setNextStepContentUrl("/api/materials/202/content");
         response.setNextStepViewUrl("/materials/202/view");
         when(learnerWorkflowService.evaluateCurrentDemoSubmission(eq("ou_test_submit_demo"), any()))
                 .thenReturn(response);
@@ -190,6 +227,8 @@ class FeishuEventControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/submit-demo"))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("Demo 评估已完成")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("掌握程度：HIGH")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/201/view")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/materials/202/view")));
     }
@@ -211,6 +250,7 @@ class FeishuEventControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
                 .andExpect(jsonPath("$.data.command").value("/ai"))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("当前 AI 配置")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("DEEPSEEK")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("deepseek-chat")));
     }
@@ -230,8 +270,19 @@ class FeishuEventControllerTest {
                         .content(messageEvent("ou_test_ai_switch", "/ai switch 2")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("已切换当前 AI 模型")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("OPENAI")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("gpt-4.1-mini")));
+    }
+
+    @Test
+    void shouldHandleAiSwitchCommandWithInvalidConfigId() throws Exception {
+        mockMvc.perform(post("/api/feishu/events")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(messageEvent("ou_test_ai_switch_invalid", "/ai switch abc")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.success").value(false))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("配置ID 必须是数字")));
     }
 
     @Test
@@ -241,6 +292,7 @@ class FeishuEventControllerTest {
                         .content(messageEvent("ou_test_ai_config", "/ai config")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.success").value(true))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("AI 配置说明")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("http://localhost:8080/ai/provider-config-page?openId=ou_test_ai_config")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("API Key")));
     }

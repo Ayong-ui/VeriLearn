@@ -51,6 +51,7 @@ class LearnerWorkflowServiceImplTest {
 
     private static final String LINUX_TOPIC = "Linux Route Cleanup Test";
     private static final String MYSQL_TOPIC = "MySQL Route Cleanup Test";
+    private static final String REDIS_TOPIC = "Redis Completed Route Followup Test";
 
     @Autowired
     private LearnerWorkflowService learnerWorkflowService;
@@ -92,6 +93,7 @@ class LearnerWorkflowServiceImplTest {
     void cleanupRouteDirectories() {
         learningRouteService.deleteRouteDirectory(LINUX_TOPIC);
         learningRouteService.deleteRouteDirectory(MYSQL_TOPIC);
+        learningRouteService.deleteRouteDirectory(REDIS_TOPIC);
     }
 
     @Test
@@ -162,6 +164,26 @@ class LearnerWorkflowServiceImplTest {
         assertFalse(Files.exists(Path.of(mysqlRouteAbsolutePath)));
     }
 
+    @Test
+    void shouldAllowStartingNewRouteAfterPreviousRouteChaptersAreCompleted() {
+        mockAiRouteAndMaterials();
+        String openId = "completed-route-user";
+
+        LearnerSetupResponse firstSetup = learnerWorkflowService.setupLearner(setupRequest(openId, LINUX_TOPIC));
+        markAllChaptersCompleted(firstSetup.getGoalId());
+
+        LearnerSetupResponse secondSetup = learnerWorkflowService.setupLearner(setupRequest(openId, REDIS_TOPIC));
+
+        LearningGoal firstGoal = learningGoalMapper.selectById(firstSetup.getGoalId());
+        LearningGoal secondGoal = learningGoalMapper.selectById(secondSetup.getGoalId());
+
+        assertNotNull(firstGoal);
+        assertEquals("COMPLETED", firstGoal.getStatus());
+        assertNotNull(secondGoal);
+        assertEquals(REDIS_TOPIC, secondGoal.getTopic());
+        assertEquals("ACTIVE", secondGoal.getStatus());
+    }
+
     private void mockAiRouteAndMaterials() {
         given(aiRoutingService.chatForUser(anyLong(), anyString(), anyString()))
                 .willAnswer(invocation -> buildRouteResponse(extractTopic(invocation.getArgument(2, String.class))));
@@ -183,6 +205,18 @@ class LearnerWorkflowServiceImplTest {
         goal.setStatus("COMPLETED");
         goal.setUpdatedAt(LocalDateTime.now());
         learningGoalMapper.updateById(goal);
+    }
+
+    private void markAllChaptersCompleted(Long goalId) {
+        List<LearningChapter> chapters = learningChapterMapper.selectList(
+                new LambdaQueryWrapper<LearningChapter>()
+                        .eq(LearningChapter::getGoalId, goalId)
+        );
+        for (LearningChapter chapter : chapters) {
+            chapter.setStatus("COMPLETED");
+            chapter.setUpdatedAt(LocalDateTime.now());
+            learningChapterMapper.updateById(chapter);
+        }
     }
 
     private LearnerUser findLearner(String openId) {

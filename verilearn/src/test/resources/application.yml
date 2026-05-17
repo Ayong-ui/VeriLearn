@@ -8,7 +8,8 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   sql:
     init:
-      mode: never
+      mode: always
+      schema-locations: classpath:schema-test.sql
 
 server:
   port: 8080
