@@ -24,25 +24,25 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class FeishuLongConnectionBridgeServiceImpl implements FeishuLongConnectionBridgeService {
 
     private static final Logger log = LoggerFactory.getLogger(FeishuLongConnectionBridgeServiceImpl.class);
     private static final String CHAT_TYPE_P2P = "p2p";
-    private static final String NON_TEXT_GUIDE = "当前仅支持文本命令消息，请发送 /start、/today、/progress、/dashboard、/submit-demo 或 /ai。";
+    private static final String NON_TEXT_GUIDE = "当前仅支持文本命令消息。发送 /help 查看可用命令。";
     private static final String NON_P2P_GUIDE = """
             当前版本仅支持与 VeriLearn 机器人单聊。
-            请在机器人单聊窗口中发送：
-            /start Java 后端
-            /today
-            /ai current
+            请在机器人单聊窗口中发送 /help 查看可用命令。
             """.trim();
 
     private final FeishuProperties feishuProperties;
     private final FeishuCommandService feishuCommandService;
     private final FeishuCardService feishuCardService;
     private final FeishuMessagingService feishuMessagingService;
+    private final Set<String> processedMessageIds = ConcurrentHashMap.newKeySet();
 
     public FeishuLongConnectionBridgeServiceImpl(
             FeishuProperties feishuProperties,
@@ -89,6 +89,14 @@ public class FeishuLongConnectionBridgeServiceImpl implements FeishuLongConnecti
         if (!"text".equalsIgnoreCase(message.getMessageType())) {
             feishuMessagingService.sendTextMessage(replyTarget, NON_TEXT_GUIDE);
             return;
+        }
+
+        if (messageId != null && !messageId.isBlank() && !processedMessageIds.add(messageId)) {
+            log.info("ignore duplicate feishu message event: messageId={}", messageId);
+            return;
+        }
+        if (processedMessageIds.size() > 10_000) {
+            processedMessageIds.clear();
         }
 
         FeishuEventRequest request = new FeishuEventRequest();

@@ -2,9 +2,11 @@ package com.verilearn.workflow.schedule;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.verilearn.chapter.dto.ChapterSummaryResponse;
+import com.verilearn.chapter.model.ChapterStatus;
 import com.verilearn.chapter.service.ChapterService;
 import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
+import com.verilearn.goal.model.GoalStatus;
 import com.verilearn.infra.feishu.service.FeishuMessagingService;
 import com.verilearn.user.entity.LearnerUser;
 import com.verilearn.user.mapper.LearnerUserMapper;
@@ -22,9 +24,6 @@ import java.util.Map;
 public class LearnerReminderScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(LearnerReminderScheduler.class);
-    private static final String GOAL_ACTIVE = "ACTIVE";
-    private static final String CHAPTER_COMPLETED = "COMPLETED";
-
     private final LearningGoalMapper learningGoalMapper;
     private final LearnerUserMapper learnerUserMapper;
     private final ChapterService chapterService;
@@ -80,7 +79,7 @@ public class LearnerReminderScheduler {
                             你有待复习的章节，建议今晚处理。
                             当前主题：%s
                             待复习章节数：%d
-                            直接发送 /dashboard 查看复习入口和当前上下文。
+                            发送 /review 完成全部章节复习，或 /review 章序号 指定复习某一章。
                             """.formatted(goal.getTopic(), pendingReviews.size()).trim()
             );
         }
@@ -89,7 +88,7 @@ public class LearnerReminderScheduler {
     private List<LearningGoal> listLatestActiveGoals() {
         List<LearningGoal> activeGoals = learningGoalMapper.selectList(
                 new LambdaQueryWrapper<LearningGoal>()
-                        .eq(LearningGoal::getStatus, GOAL_ACTIVE)
+                        .eq(LearningGoal::getStatus, GoalStatus.ACTIVE.name())
                         .orderByDesc(LearningGoal::getId)
         );
         Map<Long, LearningGoal> latestByUser = new LinkedHashMap<>();
@@ -104,7 +103,7 @@ public class LearnerReminderScheduler {
     private boolean hasActionableLearning(Long goalId) {
         try {
             return chapterService.listChaptersByGoalId(goalId).stream()
-                    .anyMatch(chapter -> !CHAPTER_COMPLETED.equals(chapter.getStatus()));
+                    .anyMatch(chapter -> !ChapterStatus.COMPLETED.name().equals(chapter.getStatus()));
         } catch (RuntimeException exception) {
             log.warn("failed to inspect actionable learning chapters: goalId={}", goalId, exception);
             return false;

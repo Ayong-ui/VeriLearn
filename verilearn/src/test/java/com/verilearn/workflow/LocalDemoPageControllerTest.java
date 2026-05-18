@@ -24,7 +24,7 @@ class LocalDemoPageControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(Matchers.containsString("VeriLearn 本地演示入口")))
                 .andExpect(content().string(Matchers.containsString("/api/learners/setup")))
-                .andExpect(content().string(Matchers.containsString("/api/learners/${encodedOpenId}/today-task")))
+                .andExpect(content().string(Matchers.containsString("/api/learners/${encodedOpenId}/today-task`, {method: 'POST'}")))
                 .andExpect(content().string(Matchers.containsString("/ai/provider-config-page?openId=")))
                 .andExpect(content().string(Matchers.containsString("提交 Demo 反馈")));
     }

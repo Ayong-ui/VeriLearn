@@ -19,6 +19,9 @@ import com.verilearn.chapter.entity.ChapterMaterial;
 import com.verilearn.chapter.entity.ChapterReviewRecord;
 import com.verilearn.chapter.entity.ChapterStep;
 import com.verilearn.chapter.entity.LearningChapter;
+import com.verilearn.chapter.model.ChapterStatus;
+import com.verilearn.chapter.model.ReviewStatus;
+import com.verilearn.chapter.model.StepStatus;
 import com.verilearn.chapter.mapper.ChapterMaterialMapper;
 import com.verilearn.chapter.mapper.ChapterReviewRecordMapper;
 import com.verilearn.chapter.mapper.ChapterStepMapper;
@@ -29,10 +32,12 @@ import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
 import com.verilearn.knowledge.entity.KnowledgeNode;
 import com.verilearn.knowledge.mapper.KnowledgeNodeMapper;
+import com.verilearn.knowledge.model.NodeStatus;
 import com.verilearn.workflow.dto.LearningRouteChapter;
 import com.verilearn.workflow.service.LearningRouteService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -43,15 +48,6 @@ import java.util.Objects;
 @Service
 public class ChapterServiceImpl implements ChapterService {
 
-    private static final String CHAPTER_NOT_STARTED = "NOT_STARTED";
-    private static final String CHAPTER_IN_PROGRESS = "IN_PROGRESS";
-    private static final String CHAPTER_COMPLETED = "COMPLETED";
-    private static final String STEP_NOT_STARTED = "NOT_STARTED";
-    private static final String STEP_IN_PROGRESS = "IN_PROGRESS";
-    private static final String STEP_COMPLETED = "COMPLETED";
-    private static final String REVIEW_NOT_READY = "NOT_READY";
-    private static final String REVIEW_PENDING = "PENDING";
-    private static final String REVIEWED = "REVIEWED";
     private static final String MATERIAL_CONTENT_URL_TEMPLATE = "/api/materials/%d/content";
     private static final String MATERIAL_VIEW_URL_TEMPLATE = "/materials/%d/view";
 
@@ -65,6 +61,7 @@ public class ChapterServiceImpl implements ChapterService {
     private final AiEvaluationService aiEvaluationService;
     private final ChapterMaterialStorageService chapterMaterialStorageService;
     private final LearningRouteService learningRouteService;
+    private final TransactionTemplate transactionTemplate;
 
     public ChapterServiceImpl(
             LearningGoalMapper learningGoalMapper,
@@ -76,7 +73,8 @@ public class ChapterServiceImpl implements ChapterService {
             AiMaterialService aiMaterialService,
             AiEvaluationService aiEvaluationService,
             ChapterMaterialStorageService chapterMaterialStorageService,
-            LearningRouteService learningRouteService
+            LearningRouteService learningRouteService,
+            TransactionTemplate transactionTemplate
     ) {
         this.learningGoalMapper = learningGoalMapper;
         this.knowledgeNodeMapper = knowledgeNodeMapper;
@@ -88,6 +86,7 @@ public class ChapterServiceImpl implements ChapterService {
         this.aiEvaluationService = aiEvaluationService;
         this.chapterMaterialStorageService = chapterMaterialStorageService;
         this.learningRouteService = learningRouteService;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @Override
@@ -119,7 +118,7 @@ public class ChapterServiceImpl implements ChapterService {
             chapter.setSummary(routeChapter != null && routeChapter.getSummary() != null && !routeChapter.getSummary().isBlank()
                     ? routeChapter.getSummary()
                     : "Study the theory, complete the demo, and summarize your understanding.");
-            chapter.setStatus(CHAPTER_NOT_STARTED);
+            chapter.setStatus(ChapterStatus.NOT_STARTED.name());
             chapter.setCreatedAt(now);
             chapter.setUpdatedAt(now);
             learningChapterMapper.insert(chapter);
@@ -175,20 +174,20 @@ public class ChapterServiceImpl implements ChapterService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        if (CHAPTER_NOT_STARTED.equals(chapter.getStatus())) {
-            chapter.setStatus(CHAPTER_IN_PROGRESS);
+        if (ChapterStatus.NOT_STARTED.name().equals(chapter.getStatus())) {
+            chapter.setStatus(ChapterStatus.IN_PROGRESS.name());
             chapter.setUpdatedAt(now);
             learningChapterMapper.updateById(chapter);
         }
 
-        boolean hasInProgress = steps.stream().anyMatch(step -> STEP_IN_PROGRESS.equals(step.getStatus()));
+        boolean hasInProgress = steps.stream().anyMatch(step -> StepStatus.IN_PROGRESS.name().equals(step.getStatus()));
         if (!hasInProgress) {
             ChapterStep firstPendingStep = steps.stream()
-                    .filter(step -> STEP_NOT_STARTED.equals(step.getStatus()))
+                    .filter(step -> StepStatus.NOT_STARTED.name().equals(step.getStatus()))
                     .min(Comparator.comparing(ChapterStep::getStepOrder))
                     .orElse(null);
             if (firstPendingStep != null) {
-                firstPendingStep.setStatus(STEP_IN_PROGRESS);
+                firstPendingStep.setStatus(StepStatus.IN_PROGRESS.name());
                 firstPendingStep.setUpdatedAt(now);
                 chapterStepMapper.updateById(firstPendingStep);
             }
@@ -205,22 +204,22 @@ public class ChapterServiceImpl implements ChapterService {
         if (step == null || !chapterId.equals(step.getChapterId())) {
             throw new IllegalArgumentException("chapter step not found");
         }
-        if (!STEP_IN_PROGRESS.equals(step.getStatus())) {
+        if (!StepStatus.IN_PROGRESS.name().equals(step.getStatus())) {
             throw new IllegalArgumentException("chapter step is not in progress");
         }
 
         LocalDateTime now = LocalDateTime.now();
-        step.setStatus(STEP_COMPLETED);
+        step.setStatus(StepStatus.PASSED.name());
         step.setFeedbackNote(request.getFeedbackNote());
         step.setUpdatedAt(now);
         chapterStepMapper.updateById(step);
 
         if (Boolean.TRUE.equals(request.getNeedsReview())) {
-            updateReviewStatus(chapterId, REVIEW_PENDING, null, now);
+            updateReviewStatus(chapterId, ReviewStatus.PENDING.name(), null, now);
         }
 
         ChapterStep nextStep = listSteps(chapterId).stream()
-                .filter(item -> STEP_NOT_STARTED.equals(item.getStatus()))
+                .filter(item -> StepStatus.NOT_STARTED.name().equals(item.getStatus()))
                 .min(Comparator.comparing(ChapterStep::getStepOrder))
                 .orElse(null);
 
@@ -229,28 +228,28 @@ public class ChapterServiceImpl implements ChapterService {
         response.setCompletedStepId(step.getId());
 
         if (nextStep != null) {
-            nextStep.setStatus(STEP_IN_PROGRESS);
+            nextStep.setStatus(StepStatus.IN_PROGRESS.name());
             nextStep.setUpdatedAt(now);
             chapterStepMapper.updateById(nextStep);
 
-            chapter.setStatus(CHAPTER_IN_PROGRESS);
+            chapter.setStatus(ChapterStatus.IN_PROGRESS.name());
             chapter.setUpdatedAt(now);
             learningChapterMapper.updateById(chapter);
 
             response.setNextStepId(nextStep.getId());
             response.setNextStepType(nextStep.getStepType());
-            response.setChapterStatus(CHAPTER_IN_PROGRESS);
+            response.setChapterStatus(ChapterStatus.IN_PROGRESS.name());
             response.setReviewStatus(getReviewStatus(chapterId));
             return response;
         }
 
-        chapter.setStatus(CHAPTER_COMPLETED);
+        chapter.setStatus(ChapterStatus.COMPLETED.name());
         chapter.setUpdatedAt(now);
         learningChapterMapper.updateById(chapter);
-        updateReviewStatus(chapterId, REVIEW_PENDING, null, now);
+        updateReviewStatus(chapterId, ReviewStatus.PENDING.name(), null, now);
 
-        response.setChapterStatus(CHAPTER_COMPLETED);
-        response.setReviewStatus(REVIEW_PENDING);
+        response.setChapterStatus(ChapterStatus.COMPLETED.name());
+        response.setReviewStatus(ReviewStatus.PENDING.name());
         return response;
     }
 
@@ -258,10 +257,10 @@ public class ChapterServiceImpl implements ChapterService {
     @Transactional
     public ChapterDetailResponse completeReview(Long chapterId) {
         LearningChapter chapter = getChapterOrThrow(chapterId);
-        if (!CHAPTER_COMPLETED.equals(chapter.getStatus())) {
+        if (!ChapterStatus.COMPLETED.name().equals(chapter.getStatus())) {
             throw new IllegalArgumentException("chapter must be completed before review");
         }
-        updateReviewStatus(chapterId, REVIEWED, LocalDateTime.now(), LocalDateTime.now());
+        updateReviewStatus(chapterId, ReviewStatus.REVIEWED.name(), LocalDateTime.now(), LocalDateTime.now());
         return toDetailResponse(chapter);
     }
 
@@ -271,7 +270,7 @@ public class ChapterServiceImpl implements ChapterService {
         List<ChapterSummaryResponse> allChapters = listChaptersByGoalId(goalId);
         List<ChapterSummaryResponse> pending = new ArrayList<>();
         for (ChapterSummaryResponse chapter : allChapters) {
-            if (REVIEW_PENDING.equals(chapter.getReviewStatus())) {
+            if (ReviewStatus.PENDING.name().equals(chapter.getReviewStatus())) {
                 pending.add(chapter);
             }
         }
@@ -279,7 +278,6 @@ public class ChapterServiceImpl implements ChapterService {
     }
 
     @Override
-    @Transactional
     public ChapterDetailResponse generateMaterials(Long chapterId) {
         LearningChapter chapter = getChapterOrThrow(chapterId);
         LearningGoal goal = getGoalOrThrow(chapter.getGoalId());
@@ -291,31 +289,33 @@ public class ChapterServiceImpl implements ChapterService {
                 findCurrentStepType(chapterId)
         );
 
-        LocalDateTime now = LocalDateTime.now();
-        upsertMaterial(
-                goal.getTopic(),
-                chapter,
-                "THEORY_DOC",
-                materialResult.getTheoryContent(),
-                materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
-                now
-        );
-        upsertMaterial(
-                goal.getTopic(),
-                chapter,
-                "DEMO_GUIDE",
-                learningRouteService.ensureDemoAnswerTemplate(materialResult.getDemoGuideContent()),
-                materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
-                now
-        );
+        return transactionTemplate.execute(status -> {
+            LocalDateTime now = LocalDateTime.now();
+            upsertMaterial(
+                    goal.getTopic(),
+                    chapter,
+                    "THEORY_DOC",
+                    materialResult.getTheoryContent(),
+                    materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
+                    now
+            );
+            upsertMaterial(
+                    goal.getTopic(),
+                    chapter,
+                    "DEMO_GUIDE",
+                    learningRouteService.ensureDemoAnswerTemplate(materialResult.getDemoGuideContent()),
+                    materialResult.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
+                    now
+            );
 
-        if (materialResult.getSummary() != null && !materialResult.getSummary().isBlank()) {
-            chapter.setSummary(materialResult.getSummary());
-            chapter.setUpdatedAt(now);
-            learningChapterMapper.updateById(chapter);
-        }
+            if (materialResult.getSummary() != null && !materialResult.getSummary().isBlank()) {
+                chapter.setSummary(materialResult.getSummary());
+                chapter.setUpdatedAt(now);
+                learningChapterMapper.updateById(chapter);
+            }
 
-        return toDetailResponse(getChapterOrThrow(chapterId));
+            return toDetailResponse(getChapterOrThrow(chapterId));
+        });
     }
 
     @Override
@@ -390,7 +390,6 @@ public class ChapterServiceImpl implements ChapterService {
     }
 
     @Override
-    @Transactional
     public ChapterDemoEvaluationResponse evaluateDemoSubmission(Long chapterId, ChapterDemoEvaluationRequest request) {
         LearningChapter chapter = getChapterOrThrow(chapterId);
         LearningGoal goal = getGoalOrThrow(chapter.getGoalId());
@@ -401,7 +400,7 @@ public class ChapterServiceImpl implements ChapterService {
         if (!"RUN_DEMO".equals(step.getStepType())) {
             throw new IllegalArgumentException("chapter step is not a demo step");
         }
-        if (!STEP_IN_PROGRESS.equals(step.getStatus())) {
+        if (!StepStatus.IN_PROGRESS.name().equals(step.getStatus()) && !StepStatus.FAILED.name().equals(step.getStatus())) {
             throw new IllegalArgumentException("chapter demo step is not in progress");
         }
 
@@ -422,84 +421,77 @@ public class ChapterServiceImpl implements ChapterService {
                 request.getQuestion()
         );
 
-        LocalDateTime now = LocalDateTime.now();
-        step.setStatus(STEP_COMPLETED);
-        step.setFeedbackNote(request.getSubmissionSummary());
-        step.setUpdatedAt(now);
-        chapterStepMapper.updateById(step);
+        return transactionTemplate.execute(status -> {
+            LocalDateTime now = LocalDateTime.now();
+            boolean passed = !evaluation.isShouldReview();
+            step.setStatus(passed ? StepStatus.PASSED.name() : StepStatus.FAILED.name());
+            step.setFeedbackNote(request.getSubmissionSummary());
+            step.setUpdatedAt(now);
+            chapterStepMapper.updateById(step);
 
-        ChapterMaterial evaluationMaterial = upsertMaterial(
-                goal.getTopic(),
-                chapter,
-                "EVALUATION_REPORT",
-                evaluation.getEvaluationMarkdown(),
-                evaluation.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
-                now
-        );
-        ChapterMaterial nextStepMaterial = upsertMaterial(
-                goal.getTopic(),
-                chapter,
-                "NEXT_STEP_NOTE",
-                evaluation.getNextStepMarkdown(),
-                evaluation.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
-                now
-        );
+            ChapterMaterial evaluationMaterial = upsertMaterial(
+                    goal.getTopic(),
+                    chapter,
+                    "EVALUATION_REPORT",
+                    evaluation.getEvaluationMarkdown(),
+                    evaluation.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
+                    now
+            );
+            ChapterMaterial nextStepMaterial = upsertMaterial(
+                    goal.getTopic(),
+                    chapter,
+                    "NEXT_STEP_NOTE",
+                    evaluation.getNextStepMarkdown(),
+                    evaluation.isGeneratedByAi() ? "AI_GENERATED" : "TEMPLATE_READY",
+                    now
+            );
 
-        if (evaluation.isShouldReview()) {
-            updateReviewStatus(chapterId, REVIEW_PENDING, null, now);
-        }
+            ChapterDemoEvaluationResponse response = new ChapterDemoEvaluationResponse();
+            response.setChapterId(chapterId);
+            response.setCompletedStepId(step.getId());
+            response.setUnderstandingLevel(evaluation.getUnderstandingLevel());
+            response.setEvaluationMaterialId(evaluationMaterial.getId());
+            response.setEvaluationFilePath(evaluationMaterial.getFilePath());
+            response.setEvaluationContentUrl(materialContentUrl(evaluationMaterial.getId()));
+            response.setEvaluationViewUrl(materialViewUrl(evaluationMaterial.getId()));
+            response.setNextStepMaterialId(nextStepMaterial.getId());
+            response.setNextStepFilePath(nextStepMaterial.getFilePath());
+            response.setNextStepContentUrl(materialContentUrl(nextStepMaterial.getId()));
+            response.setNextStepViewUrl(materialViewUrl(nextStepMaterial.getId()));
 
-        ChapterStep nextStep = listSteps(chapterId).stream()
-                .filter(item -> STEP_NOT_STARTED.equals(item.getStatus()))
-                .min(Comparator.comparing(ChapterStep::getStepOrder))
-                .orElse(null);
-
-        ChapterDemoEvaluationResponse response = new ChapterDemoEvaluationResponse();
-        response.setChapterId(chapterId);
-        response.setCompletedStepId(step.getId());
-        response.setUnderstandingLevel(evaluation.getUnderstandingLevel());
-        response.setEvaluationMaterialId(evaluationMaterial.getId());
-        response.setEvaluationFilePath(evaluationMaterial.getFilePath());
-        response.setEvaluationContentUrl(materialContentUrl(evaluationMaterial.getId()));
-        response.setEvaluationViewUrl(materialViewUrl(evaluationMaterial.getId()));
-        response.setNextStepMaterialId(nextStepMaterial.getId());
-        response.setNextStepFilePath(nextStepMaterial.getFilePath());
-        response.setNextStepContentUrl(materialContentUrl(nextStepMaterial.getId()));
-        response.setNextStepViewUrl(materialViewUrl(nextStepMaterial.getId()));
-
-        if (nextStep != null) {
-            nextStep.setStatus(STEP_IN_PROGRESS);
-            nextStep.setUpdatedAt(now);
-            chapterStepMapper.updateById(nextStep);
-
-            chapter.setStatus(CHAPTER_IN_PROGRESS);
-            chapter.setUpdatedAt(now);
-            learningChapterMapper.updateById(chapter);
-
-            response.setNextStepId(nextStep.getId());
-            response.setNextStepType(nextStep.getStepType());
-            response.setChapterStatus(CHAPTER_IN_PROGRESS);
-            response.setReviewStatus(getReviewStatus(chapterId));
+            KnowledgeNode node = knowledgeNodeMapper.selectById(chapter.getNodeId());
+            if (passed) {
+                chapter.setStatus(ChapterStatus.COMPLETED.name());
+                chapter.setUpdatedAt(now);
+                learningChapterMapper.updateById(chapter);
+                updateReviewStatus(chapterId, ReviewStatus.PENDING.name(), null, now);
+                if (node != null) {
+                    node.setStatus(NodeStatus.PASSED.name());
+                    node.setUpdatedAt(now);
+                    knowledgeNodeMapper.updateById(node);
+                }
+                refreshGoalStatus(goal.getId(), now);
+                response.setChapterStatus(ChapterStatus.COMPLETED.name());
+                response.setReviewStatus(ReviewStatus.PENDING.name());
+            } else {
+                chapter.setStatus(ChapterStatus.IN_PROGRESS.name());
+                chapter.setUpdatedAt(now);
+                learningChapterMapper.updateById(chapter);
+                if (node != null) {
+                    node.setStatus(NodeStatus.IN_PROGRESS.name());
+                    node.setUpdatedAt(now);
+                    knowledgeNodeMapper.updateById(node);
+                }
+                response.setChapterStatus(ChapterStatus.IN_PROGRESS.name());
+                response.setReviewStatus(ReviewStatus.NOT_READY.name());
+            }
             return response;
-        }
-
-        chapter.setStatus(CHAPTER_COMPLETED);
-        chapter.setUpdatedAt(now);
-        learningChapterMapper.updateById(chapter);
-        updateReviewStatus(chapterId, REVIEW_PENDING, null, now);
-        refreshGoalStatus(goal.getId(), now);
-        response.setChapterStatus(CHAPTER_COMPLETED);
-        response.setReviewStatus(REVIEW_PENDING);
-        return response;
+        });
     }
 
     private void createDefaultSteps(LearningChapter chapter, String chapterTitle, LocalDateTime now) {
-        insertStep(chapter.getId(), 1, "READ_THEORY", "Read the theory for " + chapterTitle,
-                "Study the theory content and understand the core idea.", now);
-        insertStep(chapter.getId(), 2, "RUN_DEMO", "Complete the demo for " + chapterTitle,
-                "Run the demo or exercise and compare the result with the expected behavior.", now);
-        insertStep(chapter.getId(), 3, "SUBMIT_FEEDBACK", "Submit your feedback for " + chapterTitle,
-                "Describe what you understood, what was unclear, and whether review is needed.", now);
+        insertStep(chapter.getId(), 1, "RUN_DEMO", "Complete the demo for " + chapterTitle,
+                "Read the theory material, then complete the demo exercise. Submit via /submit-demo when done.", now);
     }
 
     private void refreshGoalStatus(Long goalId, LocalDateTime now) {
@@ -507,7 +499,7 @@ public class ChapterServiceImpl implements ChapterService {
                 new LambdaQueryWrapper<LearningChapter>()
                         .eq(LearningChapter::getGoalId, goalId)
         );
-        if (!chapters.isEmpty() && chapters.stream().allMatch(item -> CHAPTER_COMPLETED.equals(item.getStatus()))) {
+        if (!chapters.isEmpty() && chapters.stream().allMatch(item -> ChapterStatus.COMPLETED.name().equals(item.getStatus()))) {
             LearningGoal goal = getGoalOrThrow(goalId);
             goal.setStatus("COMPLETED");
             goal.setUpdatedAt(now);
@@ -549,7 +541,7 @@ public class ChapterServiceImpl implements ChapterService {
     private void createReviewRecord(Long chapterId, LocalDateTime now) {
         ChapterReviewRecord review = new ChapterReviewRecord();
         review.setChapterId(chapterId);
-        review.setReviewStatus(REVIEW_NOT_READY);
+        review.setReviewStatus(ReviewStatus.NOT_READY.name());
         review.setCreatedAt(now);
         review.setUpdatedAt(now);
         chapterReviewRecordMapper.insert(review);
@@ -562,7 +554,7 @@ public class ChapterServiceImpl implements ChapterService {
         step.setStepType(stepType);
         step.setTitle(title);
         step.setInstructionText(instructionText);
-        step.setStatus(STEP_NOT_STARTED);
+        step.setStatus(StepStatus.NOT_STARTED.name());
         step.setCreatedAt(now);
         step.setUpdatedAt(now);
         chapterStepMapper.insert(step);
@@ -714,7 +706,7 @@ public class ChapterServiceImpl implements ChapterService {
 
     private String findCurrentStepType(Long chapterId) {
         return listSteps(chapterId).stream()
-                .filter(step -> STEP_IN_PROGRESS.equals(step.getStatus()))
+                .filter(step -> StepStatus.IN_PROGRESS.name().equals(step.getStatus()))
                 .min(Comparator.comparing(ChapterStep::getStepOrder))
                 .map(ChapterStep::getStepType)
                 .orElse(null);

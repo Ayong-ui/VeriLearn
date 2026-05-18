@@ -5,6 +5,7 @@ import com.verilearn.goal.dto.GoalResponse;
 import com.verilearn.goal.dto.GoalUpsertRequest;
 import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
+import com.verilearn.goal.model.GoalStatus;
 import com.verilearn.goal.service.GoalService;
 import com.verilearn.user.entity.LearnerUser;
 import com.verilearn.user.mapper.LearnerUserMapper;
@@ -15,8 +16,6 @@ import java.time.LocalDateTime;
 
 @Service
 public class GoalServiceImpl implements GoalService {
-
-    private static final String ACTIVE_STATUS = "ACTIVE";
 
     private final LearnerUserMapper learnerUserMapper;
     private final LearningGoalMapper learningGoalMapper;
@@ -48,13 +47,26 @@ public class GoalServiceImpl implements GoalService {
             learnerUserMapper.updateById(learnerUser);
         }
 
+        LearningGoal existingActive = learningGoalMapper.selectOne(
+                new LambdaQueryWrapper<LearningGoal>()
+                        .eq(LearningGoal::getUserId, learnerUser.getId())
+                        .eq(LearningGoal::getStatus, GoalStatus.ACTIVE.name())
+                        .orderByDesc(LearningGoal::getId)
+                        .last("LIMIT 1")
+        );
+        if (existingActive != null) {
+            existingActive.setStatus(GoalStatus.CANCELLED.name());
+            existingActive.setUpdatedAt(now);
+            learningGoalMapper.updateById(existingActive);
+        }
+
         LearningGoal learningGoal = new LearningGoal();
         learningGoal.setUserId(learnerUser.getId());
         learningGoal.setCreatedAt(now);
         learningGoal.setTopic(request.getTopic());
         learningGoal.setTargetLevel(request.getTargetLevel());
         learningGoal.setDailyMinutes(request.getDailyMinutes());
-        learningGoal.setStatus(ACTIVE_STATUS);
+        learningGoal.setStatus(GoalStatus.ACTIVE.name());
         learningGoal.setUpdatedAt(now);
         learningGoalMapper.insert(learningGoal);
 

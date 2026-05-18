@@ -7,14 +7,18 @@ import com.verilearn.chapter.entity.LearningChapter;
 import com.verilearn.chapter.mapper.ChapterMaterialMapper;
 import com.verilearn.chapter.mapper.ChapterStepMapper;
 import com.verilearn.chapter.mapper.LearningChapterMapper;
+import com.verilearn.chapter.model.ChapterStatus;
+import com.verilearn.chapter.model.StepStatus;
 import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
 import com.verilearn.knowledge.entity.KnowledgeNode;
 import com.verilearn.knowledge.mapper.KnowledgeNodeMapper;
+import com.verilearn.knowledge.model.NodeStatus;
 import com.verilearn.task.dto.GenerateTaskRequest;
 import com.verilearn.task.dto.TaskResponse;
 import com.verilearn.task.entity.DailyTask;
 import com.verilearn.task.mapper.DailyTaskMapper;
+import com.verilearn.task.model.TaskStatus;
 import com.verilearn.task.service.TaskService;
 import com.verilearn.validation.entity.DiversionRecord;
 import com.verilearn.validation.entity.ValidationItem;
@@ -39,11 +43,8 @@ import java.util.stream.Collectors;
 @Service
 public class TaskServiceImpl implements TaskService {
 
-    private static final String PENDING_STATUS = "PENDING";
     private static final String NOT_STARTED_STATUS = "NOT_STARTED";
     private static final String IN_PROGRESS_STATUS = "IN_PROGRESS";
-    private static final String NEEDS_RETRY_STATUS = "NEEDS_RETRY";
-    private static final String COMPLETED_STATUS = "COMPLETED";
     private static final String MATERIAL_THEORY_DOC = "THEORY_DOC";
     private static final String MATERIAL_DEMO_GUIDE = "DEMO_GUIDE";
     private static final String MATERIAL_CONTENT_URL_TEMPLATE = "/api/materials/%d/content";
@@ -155,7 +156,7 @@ public class TaskServiceImpl implements TaskService {
                 .collect(Collectors.toMap(KnowledgeNode::getId, Function.identity()));
 
         List<LearningChapter> sortedChapters = chapters.stream()
-                .filter(chapter -> !COMPLETED_STATUS.equals(chapter.getStatus()))
+                .filter(chapter -> !ChapterStatus.COMPLETED.name().equals(chapter.getStatus()))
                 .filter(chapter -> nodeMap.containsKey(chapter.getNodeId()))
                 .sorted(Comparator
                         .comparingInt((LearningChapter chapter) -> priority(nodeMap.get(chapter.getNodeId()).getStatus()))
@@ -197,6 +198,18 @@ public class TaskServiceImpl implements TaskService {
             return inProgressStep;
         }
 
+        ChapterStep failedStep = steps.stream()
+                .filter(step -> StepStatus.FAILED.name().equals(step.getStatus()))
+                .min(Comparator.comparing(ChapterStep::getStepOrder).thenComparing(ChapterStep::getId))
+                .orElse(null);
+        if (failedStep != null) {
+            LocalDateTime now = LocalDateTime.now();
+            failedStep.setStatus(IN_PROGRESS_STATUS);
+            failedStep.setUpdatedAt(now);
+            chapterStepMapper.updateById(failedStep);
+            return failedStep;
+        }
+
         ChapterStep nextStep = steps.stream()
                 .filter(step -> NOT_STARTED_STATUS.equals(step.getStatus()))
                 .min(Comparator.comparing(ChapterStep::getStepOrder).thenComparing(ChapterStep::getId))
@@ -227,7 +240,7 @@ public class TaskServiceImpl implements TaskService {
         task.setStepOrder(context.step().getStepOrder());
         task.setGoalText("Chapter " + context.chapter().getChapterNo() + ": " + context.step().getTitle());
         task.setStudyMaterial(resolveStudyMaterial(context.chapter().getId(), context.step()));
-        task.setStatus(PENDING_STATUS);
+        task.setStatus(TaskStatus.PENDING.name());
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
         dailyTaskMapper.insert(task);
@@ -242,10 +255,6 @@ public class TaskServiceImpl implements TaskService {
     }
 
     private String resolveStudyMaterial(Long chapterId, ChapterStep step) {
-        if ("SUBMIT_FEEDBACK".equals(step.getStepType())) {
-            return step.getInstructionText();
-        }
-
         String expectedMaterialType = "RUN_DEMO".equals(step.getStepType()) ? MATERIAL_DEMO_GUIDE : MATERIAL_THEORY_DOC;
         ChapterMaterial material = chapterMaterialMapper.selectOne(
                 new LambdaQueryWrapper<ChapterMaterial>()
@@ -290,7 +299,7 @@ public class TaskServiceImpl implements TaskService {
         task.setTaskDate(taskDate);
         task.setGoalText("Study knowledge node: " + candidate.getNodeName());
         task.setStudyMaterial("Review this knowledge node and prepare for validation.");
-        task.setStatus(PENDING_STATUS);
+        task.setStatus(TaskStatus.PENDING.name());
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
         dailyTaskMapper.insert(task);
@@ -313,7 +322,7 @@ public class TaskServiceImpl implements TaskService {
     }
 
     private int priority(String status) {
-        if (NEEDS_RETRY_STATUS.equals(status)) {
+        if (NodeStatus.NEEDS_RETRY.name().equals(status)) {
             return 0;
         }
         if (IN_PROGRESS_STATUS.equals(status)) {
@@ -340,7 +349,13 @@ public class TaskServiceImpl implements TaskService {
             return true;
         }
         LearningChapter chapter = learningChapterMapper.selectById(task.getChapterId());
-        return chapter != null && goalId.equals(chapter.getGoalId());
+        if (chapter == null || !goalId.equals(chapter.getGoalId())) {
+            return false;
+        }
+        if (ChapterStatus.COMPLETED.name().equals(chapter.getStatus())) {
+            return false;
+        }
+        return true;
     }
 
     private void deleteTaskCascade(Long taskId) {

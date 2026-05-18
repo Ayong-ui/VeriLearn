@@ -36,31 +36,32 @@ public class LearningRouteServiceImpl implements LearningRouteService {
 
     @Override
     public LearningRoutePlan generateLearningRoute(Long userId, String topic, String targetLevel) {
-        String content = aiRoutingService.chatForUser(
-                userId,
-                "You are a Chinese curriculum designer for a self-study system.",
-                """
-                        请为以下学习主题设计一条结构清晰的中文学习路线。
-                        Topic: %s
-                        Target level: %s
+        String systemPrompt = """
+                你是一位资深的中文技术课程架构师，专门为自学者设计学习路线。
 
-                        输出格式：
-                        [OVERVIEW]
-                        用 80 字以内概括这条学习路线的整体目标。
+                你的设计原则：
+                1. 路线从具体到抽象，每一章都建立在前一章的基础上。
+                2. 章节标题要具体到「学完能做什么」，避免空洞标题。
+                3. 每章的学习目标必须是可验证的——学习者能明确判断自己是否掌握了。
+                4. 章节数量根据主题复杂度而定，宁可少而精，不多而泛。
+                """;
+        String userPrompt = """
+                请为以下学习主题设计一条结构清晰的中文学习路线。
 
-                        [CHAPTERS]
-                        1. 章节标题 | 本章学习目标
-                        2. 章节标题 | 本章学习目标
-                        3. 章节标题 | 本章学习目标
-                        4. 章节标题 | 本章学习目标
+                主题：%s
+                目标水平：%s
 
-                        要求：
-                        1. 至少输出 4 章，最多 6 章。
-                        2. 章节标题必须具体，不能只写“核心概念/基础方法/综合应用”这类空泛模板。
-                        3. 每章学习目标必须明确、可执行、适合自学。
-                        4. 不要输出 FAQ，不要输出无关学科内容。
-                        """.formatted(topic, defaultText(targetLevel, "beginner"))
-        );
+                输出格式：
+
+                [OVERVIEW]
+                用 80 字以内概括这条路线学完后能做什么。
+
+                [CHAPTERS]
+                1. 章节标题 | 本章学习目标（一句话）
+                2. 章节标题 | 本章学习目标（一句话）
+                ...（至少 4 章，最多 6 章）
+                """.formatted(topic, defaultText(targetLevel, "beginner"));
+        String content = aiRoutingService.chatForUser(userId, systemPrompt, userPrompt);
         if (content == null || content.isBlank()) {
             throw new AiGenerationException("学习路线生成失败，请稍后重试或检查 AI 配置。");
         }
@@ -71,20 +72,15 @@ public class LearningRouteServiceImpl implements LearningRouteService {
     public List<String> generateTopicOptions(Long userId, String topic) {
         String content = aiRoutingService.chatForUser(
                 userId,
-                "You generate concrete Chinese study subtopics for a broad topic.",
                 """
-                        用户输入了一个范围较大的学习主题，请给出 3 到 5 个更具体的子方向。
-                        Topic: %s
+                        你是一位技术学习顾问，帮助学习者将宽泛的学习主题细化为具体可执行的方向。
+                        你给出的每个子方向都必须是可以直接开始自学、有明确边界的主题。
+                        """,
+                """
+                        用户输入了一个范围较大的学习主题：%s
 
-                        输出格式：
-                        1. 子方向
-                        2. 子方向
-                        3. 子方向
-
-                        要求：
-                        1. 每个子方向都必须是可以直接开始学习的具体主题。
-                        2. 不要输出解释性段落，只输出编号选项。
-                        3. 不要重复。
+                        请给出 3 到 5 个更具体的子方向，每个子方向一行，用数字编号。
+                        只输出编号列表，不要加解释段落。
                         """.formatted(topic)
         );
         if (content == null || content.isBlank()) {
@@ -194,13 +190,19 @@ public class LearningRouteServiceImpl implements LearningRouteService {
     @Override
     public LearningRouteContentResponse buildRouteContentResponse(String topic, String contentUrl, String viewUrl) {
         String filePath = buildRouteRelativePath(topic);
+        String contentText;
+        try {
+            contentText = readRouteContent(filePath);
+        } catch (IllegalArgumentException exception) {
+            contentText = "";
+        }
         LearningRouteContentResponse response = new LearningRouteContentResponse();
         response.setTopic(topic);
         response.setFilePath(filePath);
         response.setAbsoluteFilePath(resolveAbsolutePath(filePath));
         response.setContentUrl(contentUrl);
         response.setViewUrl(viewUrl);
-        response.setContentText(readRouteContent(filePath));
+        response.setContentText(contentText);
         return response;
     }
 

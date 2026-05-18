@@ -100,7 +100,7 @@ class FeishuEventControllerTest {
         dashboard.setTopic("MySQL");
         dashboard.setGoalStatus("ACTIVE");
         TaskResponse todayTask = new TaskResponse();
-        todayTask.setStepType("READ_THEORY");
+        todayTask.setStepType("RUN_DEMO");
         dashboard.setTodayTask(todayTask);
         var currentChapter = new com.verilearn.chapter.dto.ChapterDetailResponse();
         currentChapter.setTitle("索引基础");
@@ -150,9 +150,7 @@ class FeishuEventControllerTest {
                 .andExpect(jsonPath("$.data.command").value("/today"))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("今日任务")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("路线概览")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("先看理论")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("再做 Demo")))
-                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("本次验证项")))
+                .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("完成 Demo")))
                 .andExpect(jsonPath("$.data.replyText").value(Matchers.containsString("/submit-demo 我完成了")));
     }
 

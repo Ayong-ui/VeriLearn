@@ -41,4 +41,6 @@ public interface LearnerWorkflowService {
     ChapterDemoEvaluationResponse evaluateCurrentDemoSubmission(String feishuOpenId, LearnerDemoSubmissionRequest request);
 
     ChapterDemoEvaluationResponse evaluateCurrentDemoSubmission(String feishuOpenId, Long chapterId, LearnerDemoSubmissionRequest request);
+
+    String completeReviews(String feishuOpenId, String chapterNoText);
 }

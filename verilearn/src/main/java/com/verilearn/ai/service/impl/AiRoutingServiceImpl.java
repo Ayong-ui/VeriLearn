@@ -25,15 +25,21 @@ public class AiRoutingServiceImpl implements AiRoutingService {
 
     @Override
     public String chatForUser(Long userId, String systemPrompt, String userPrompt) {
+        return chatForUser(userId, systemPrompt, userPrompt, 0.7);
+    }
+
+    @Override
+    public String chatForUser(Long userId, String systemPrompt, String userPrompt, double temperature) {
         ResolvedAiProviderConfig config = aiProviderConfigService.resolveConfigByUserId(userId);
-        log.info("routing ai request: userId={}, sourceType={}, providerType={}, modelName={}, baseUrl={}",
-                userId, config.getSourceType(), config.getProviderType(), config.getModelName(), config.getBaseUrl());
+        log.info("routing ai request: userId={}, sourceType={}, providerType={}, modelName={}, baseUrl={}, temperature={}",
+                userId, config.getSourceType(), config.getProviderType(), config.getModelName(), config.getBaseUrl(), temperature);
         String response = openAiCompatibleChatGateway.chat(
                 config.getBaseUrl(),
                 config.getApiKey(),
                 config.getModelName(),
                 systemPrompt,
-                userPrompt
+                userPrompt,
+                temperature
         );
         if (response == null || response.isBlank()) {
             log.warn("ai request returned empty content: userId={}, sourceType={}, providerType={}, modelName={}",

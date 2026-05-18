@@ -38,7 +38,8 @@ public class DeepSeekChatClientImpl implements DeepSeekChatClient {
                                     new DeepSeekChatRequest.Message("system", systemPrompt),
                                     new DeepSeekChatRequest.Message("user", userPrompt)
                             ),
-                            0.4
+                            0.7,
+                            4096
                     ))
                     .retrieve()
                     .body(DeepSeekChatResponse.class);

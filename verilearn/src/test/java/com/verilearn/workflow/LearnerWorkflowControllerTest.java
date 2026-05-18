@@ -157,6 +157,8 @@ class LearnerWorkflowControllerTest {
         ));
         given(aiMaterialService.generateChapterMaterials(anyLong(), anyString(), anyString(), org.mockito.ArgumentMatchers.<String>nullable(String.class)))
                 .willReturn(mockMaterialResult());
+        given(aiEvaluationService.evaluateDemoSubmission(anyLong(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .willReturn(mockEvaluationResult());
 
         mockMvc.perform(post("/api/learners/setup")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -170,12 +172,12 @@ class LearnerWorkflowControllerTest {
                                 """))
                 .andExpect(status().isOk());
 
-        String todayTaskResponse = mockMvc.perform(get("/api/learners/{feishuOpenId}/today-task", openId))
+        String todayTaskResponse = mockMvc.perform(post("/api/learners/{feishuOpenId}/today-task", openId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.status").value("PENDING"))
                 .andExpect(jsonPath("$.data.chapterTitle").value("Java 后端 核心概念"))
-                .andExpect(jsonPath("$.data.stepType").value("READ_THEORY"))
+                .andExpect(jsonPath("$.data.stepType").value("RUN_DEMO"))
                 .andExpect(jsonPath("$.data.theoryContentUrl").value(org.hamcrest.Matchers.endsWith("/content")))
                 .andExpect(jsonPath("$.data.theoryViewUrl").value(org.hamcrest.Matchers.endsWith("/view")))
                 .andExpect(jsonPath("$.data.demoContentUrl").value(org.hamcrest.Matchers.endsWith("/content")))
@@ -183,37 +185,25 @@ class LearnerWorkflowControllerTest {
                 .andExpect(jsonPath("$.data.routeFilePath").value(org.hamcrest.Matchers.endsWith("learning-route.md")))
                 .andExpect(jsonPath("$.data.currentChapterNo").value(1))
                 .andExpect(jsonPath("$.data.totalChapterCount").value(4))
-                .andExpect(jsonPath("$.data.validationItems.length()").value(2))
+                .andExpect(jsonPath("$.data.validationItems.length()").value(0))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
         Long taskId = JsonPathHelper.readLong(todayTaskResponse, "$.data.taskId");
-        Long firstItemId = JsonPathHelper.readLong(todayTaskResponse, "$.data.validationItems[0].itemId");
-        Long secondItemId = JsonPathHelper.readLong(todayTaskResponse, "$.data.validationItems[1].itemId");
+        Long chapterId = JsonPathHelper.readLong(todayTaskResponse, "$.data.chapterId");
 
-        mockMvc.perform(post("/api/tasks/{taskId}/submit", taskId)
+        mockMvc.perform(post("/api/learners/{feishuOpenId}/demo-feedback/current", openId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "submissions": [
-                                    {
-                                      "itemId": %d,
-                                      "submittedAnswer": "understood",
-                                      "correct": true
-                                    },
-                                    {
-                                      "itemId": %d,
-                                      "submittedAnswer": "usable example",
-                                      "correct": true
-                                    }
-                                  ]
+                                  "submissionSummary": "I completed the demo and understood the key concept.",
+                                  "codeSnippet": "@RestController class DemoController {}",
+                                  "question": "How does Spring Boot discover controllers?"
                                 }
-                                """.formatted(firstItemId, secondItemId)))
+                                """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.finalized").value(true))
-                .andExpect(jsonPath("$.data.resultCode").value("ADVANCE"))
-                .andExpect(jsonPath("$.data.nodeStatus").value("IN_PROGRESS"));
+                .andExpect(jsonPath("$.data.understandingLevel").value("HIGH"));
 
         mockMvc.perform(get("/api/learners/{feishuOpenId}/progress", openId))
                 .andExpect(status().isOk())
@@ -221,16 +211,16 @@ class LearnerWorkflowControllerTest {
                 .andExpect(jsonPath("$.data.topic").value("Java backend"))
                 .andExpect(jsonPath("$.data.totalNodes").value(4))
                 .andExpect(jsonPath("$.data.totalChapters").value(4))
-                .andExpect(jsonPath("$.data.inProgressNodes").value(1))
-                .andExpect(jsonPath("$.data.inProgressChapters").value(1))
+                .andExpect(jsonPath("$.data.passedNodes").value(1))
+                .andExpect(jsonPath("$.data.completedChapters").value(1))
                 .andExpect(jsonPath("$.data.recentTasks.length()").value(1));
 
         mockMvc.perform(get("/api/learners/{feishuOpenId}/chapters", openId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(4))
                 .andExpect(jsonPath("$.data[0].chapterNo").value(1))
-                .andExpect(jsonPath("$.data[0].status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.data[0].currentStepType").value("RUN_DEMO"));
+                .andExpect(jsonPath("$.data[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data[0].currentStepType").doesNotExist());
 
         mockMvc.perform(get("/api/learners/{feishuOpenId}/dashboard", openId))
                 .andExpect(status().isOk())
@@ -238,18 +228,18 @@ class LearnerWorkflowControllerTest {
                 .andExpect(jsonPath("$.data.feishuOpenId").value(openId))
                 .andExpect(jsonPath("$.data.topic").value("Java backend"))
                 .andExpect(jsonPath("$.data.chapterCount").value(4))
-                .andExpect(jsonPath("$.data.pendingReviewCount").value(0))
+                .andExpect(jsonPath("$.data.pendingReviewCount").value(1))
                 .andExpect(jsonPath("$.data.todayTask.taskId").value(taskId))
-                .andExpect(jsonPath("$.data.todayTask.stepType").value("READ_THEORY"))
+                .andExpect(jsonPath("$.data.todayTask.stepType").value("RUN_DEMO"))
                 .andExpect(jsonPath("$.data.routeFilePath").value(org.hamcrest.Matchers.endsWith("learning-route.md")))
                 .andExpect(jsonPath("$.data.routeViewUrl").value(org.hamcrest.Matchers.endsWith("/view")))
                 .andExpect(jsonPath("$.data.progress.totalChapters").value(4))
                 .andExpect(jsonPath("$.data.currentChapter.chapterId").exists())
-                .andExpect(jsonPath("$.data.currentMaterials.length()").value(2))
+                .andExpect(jsonPath("$.data.currentMaterials.length()").value(4))
                 .andExpect(jsonPath("$.data.currentMaterials[0].materialType").value("THEORY_DOC"))
                 .andExpect(jsonPath("$.data.currentMaterials[1].materialType").value("DEMO_GUIDE"))
                 .andExpect(jsonPath("$.data.chapters.length()").value(4))
-                .andExpect(jsonPath("$.data.pendingReviews.length()").value(0));
+                .andExpect(jsonPath("$.data.pendingReviews.length()").value(1));
     }
 
     @Test
@@ -279,7 +269,7 @@ class LearnerWorkflowControllerTest {
                                 """))
                 .andExpect(status().isOk());
 
-        String taskResponse = mockMvc.perform(get("/api/learners/{feishuOpenId}/today-task", openId))
+        String taskResponse = mockMvc.perform(post("/api/learners/{feishuOpenId}/today-task", openId))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -287,28 +277,6 @@ class LearnerWorkflowControllerTest {
 
         Long taskId = JsonPathHelper.readLong(taskResponse, "$.data.taskId");
         Long chapterId = JsonPathHelper.readLong(taskResponse, "$.data.chapterId");
-        Long firstItemId = JsonPathHelper.readLong(taskResponse, "$.data.validationItems[0].itemId");
-        Long secondItemId = JsonPathHelper.readLong(taskResponse, "$.data.validationItems[1].itemId");
-
-        mockMvc.perform(post("/api/tasks/{taskId}/submit", taskId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "submissions": [
-                                    {
-                                      "itemId": %d,
-                                      "submittedAnswer": "understood",
-                                      "correct": true
-                                    },
-                                    {
-                                      "itemId": %d,
-                                      "submittedAnswer": "working example",
-                                      "correct": true
-                                    }
-                                  ]
-                                }
-                                """.formatted(firstItemId, secondItemId)))
-                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/learners/{feishuOpenId}/demo-feedback/current", openId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -332,7 +300,7 @@ class LearnerWorkflowControllerTest {
                 .andExpect(jsonPath("$.data.topic").value("Spring Boot"))
                 .andExpect(jsonPath("$.data.todayTask.taskId").value(taskId))
                 .andExpect(jsonPath("$.data.currentChapter.chapterId").value(chapterId))
-                .andExpect(jsonPath("$.data.currentChapter.steps[2].stepType").value("SUBMIT_FEEDBACK"))
+                .andExpect(jsonPath("$.data.currentChapter.steps[0].stepType").value("RUN_DEMO"))
                 .andExpect(jsonPath("$.data.currentMaterials.length()").value(4))
                 .andExpect(jsonPath("$.data.currentMaterials[0].materialType").value("THEORY_DOC"))
                 .andExpect(jsonPath("$.data.currentMaterials[0].contentUrl").value(org.hamcrest.Matchers.endsWith("/content")))
@@ -399,35 +367,13 @@ class LearnerWorkflowControllerTest {
                 new LambdaQueryWrapper<ChapterMaterial>().eq(ChapterMaterial::getChapterId, chapters.get(1).getId())
         ));
 
-        String taskResponse = mockMvc.perform(get("/api/learners/{feishuOpenId}/today-task", openId))
+        String taskResponse = mockMvc.perform(post("/api/learners/{feishuOpenId}/today-task", openId))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
         Long taskId = JsonPathHelper.readLong(taskResponse, "$.data.taskId");
-        Long firstItemId = JsonPathHelper.readLong(taskResponse, "$.data.validationItems[0].itemId");
-        Long secondItemId = JsonPathHelper.readLong(taskResponse, "$.data.validationItems[1].itemId");
-
-        mockMvc.perform(post("/api/tasks/{taskId}/submit", taskId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "submissions": [
-                                    {
-                                      "itemId": %d,
-                                      "submittedAnswer": "understood",
-                                      "correct": true
-                                    },
-                                    {
-                                      "itemId": %d,
-                                      "submittedAnswer": "working example",
-                                      "correct": true
-                                    }
-                                  ]
-                                }
-                                """.formatted(firstItemId, secondItemId)))
-                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/learners/{feishuOpenId}/demo-feedback/current", openId)
                         .contentType(MediaType.APPLICATION_JSON)

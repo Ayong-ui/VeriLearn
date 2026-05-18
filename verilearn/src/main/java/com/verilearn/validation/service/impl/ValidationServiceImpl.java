@@ -9,12 +9,17 @@ import com.verilearn.chapter.entity.LearningChapter;
 import com.verilearn.chapter.mapper.ChapterReviewRecordMapper;
 import com.verilearn.chapter.mapper.ChapterStepMapper;
 import com.verilearn.chapter.mapper.LearningChapterMapper;
+import com.verilearn.chapter.model.ChapterStatus;
+import com.verilearn.chapter.model.ReviewStatus;
+import com.verilearn.chapter.model.StepStatus;
 import com.verilearn.knowledge.entity.KnowledgeNode;
 import com.verilearn.knowledge.mapper.KnowledgeNodeMapper;
+import com.verilearn.knowledge.model.NodeStatus;
 import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
 import com.verilearn.task.entity.DailyTask;
 import com.verilearn.task.mapper.DailyTaskMapper;
+import com.verilearn.task.model.TaskStatus;
 import com.verilearn.validation.dto.TaskSubmissionItemRequest;
 import com.verilearn.validation.dto.TaskSubmitRequest;
 import com.verilearn.validation.dto.TaskSubmitResponse;
@@ -31,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -39,21 +45,11 @@ import java.util.Set;
 @Service
 public class ValidationServiceImpl implements ValidationService {
 
-    private static final String TASK_PENDING = "PENDING";
-    private static final String TASK_COMPLETED = "COMPLETED";
-    private static final String NODE_IN_PROGRESS = "IN_PROGRESS";
-    private static final String NODE_PASSED = "PASSED";
-    private static final String NODE_NEEDS_RETRY = "NEEDS_RETRY";
     private static final String ITEM_VALIDATED = "VALIDATED";
     private static final String RESULT_ADVANCE = "ADVANCE";
     private static final String RESULT_REVIEW = "REVIEW";
     private static final String RESULT_RETRY = "RETRY";
     private static final String RESULT_APPEND_VALIDATION = "APPEND_VALIDATION";
-    private static final String STEP_IN_PROGRESS = "IN_PROGRESS";
-    private static final String STEP_COMPLETED = "COMPLETED";
-    private static final String CHAPTER_IN_PROGRESS = "IN_PROGRESS";
-    private static final String CHAPTER_COMPLETED = "COMPLETED";
-    private static final String REVIEW_PENDING = "PENDING";
 
     private final DailyTaskMapper dailyTaskMapper;
     private final KnowledgeNodeMapper knowledgeNodeMapper;
@@ -102,26 +98,7 @@ public class ValidationServiceImpl implements ValidationService {
         List<ValidationItem> createdItems = new ArrayList<>();
 
         if ("RUN_DEMO".equals(stepType)) {
-            createdItems.add(buildItem(
-                    taskId,
-                    nodeId,
-                    1,
-                    "DEMO_RESULT",
-                    "BASIC",
-                    "Describe what happened when you ran the demo for " + nodeName + ".",
-                    "Should mention the actual output or behavior and whether it matched the expectation.",
-                    now
-            ));
-            createdItems.add(buildItem(
-                    taskId,
-                    nodeId,
-                    1,
-                    "DEMO_ANALYSIS",
-                    "BASIC",
-                    "Explain one thing you learned from the demo for " + nodeName + ".",
-                    "Should connect the demo result to the underlying concept of " + nodeName + ".",
-                    now
-            ));
+            return Collections.emptyList();
         } else if ("SUBMIT_FEEDBACK".equals(stepType)) {
             createdItems.add(buildItem(
                     taskId,
@@ -246,7 +223,7 @@ public class ValidationServiceImpl implements ValidationService {
         if (task == null) {
             throw new IllegalArgumentException("task not found");
         }
-        if (TASK_COMPLETED.equals(task.getStatus())) {
+        if (TaskStatus.COMPLETED.name().equals(task.getStatus())) {
             throw new IllegalArgumentException("task already completed");
         }
 
@@ -332,7 +309,7 @@ public class ValidationServiceImpl implements ValidationService {
         if (totalCorrectCount == totalCount) {
             finalizeTaskAndLearningState(task, node, RESULT_ADVANCE, now);
             recordDiversion(taskId, RESULT_ADVANCE, "All validation items were answered correctly.");
-            response.setTaskStatus(TASK_COMPLETED);
+            response.setTaskStatus(TaskStatus.COMPLETED.name());
             response.setNodeStatus(node.getStatus());
             response.setResultCode(RESULT_ADVANCE);
             response.setReasonText("The learner passed this task and can move forward.");
@@ -343,7 +320,7 @@ public class ValidationServiceImpl implements ValidationService {
         if (accuracy >= 0.67D) {
             finalizeTaskAndLearningState(task, node, RESULT_REVIEW, now);
             recordDiversion(taskId, RESULT_REVIEW, "The learner passed after additional validation, but review is recommended.");
-            response.setTaskStatus(TASK_COMPLETED);
+            response.setTaskStatus(TaskStatus.COMPLETED.name());
             response.setNodeStatus(node.getStatus());
             response.setResultCode(RESULT_REVIEW);
             response.setReasonText("The learner can continue, but this task should be reviewed later.");
@@ -352,7 +329,7 @@ public class ValidationServiceImpl implements ValidationService {
 
         finalizeTaskAndLearningState(task, node, RESULT_RETRY, now);
         recordDiversion(taskId, RESULT_RETRY, "The learner did not meet the minimum validation threshold.");
-        response.setTaskStatus(TASK_COMPLETED);
+        response.setTaskStatus(TaskStatus.COMPLETED.name());
         response.setNodeStatus(node.getStatus());
         response.setResultCode(RESULT_RETRY);
         response.setReasonText("The learner should retry this task before moving on.");
@@ -447,7 +424,7 @@ public class ValidationServiceImpl implements ValidationService {
     }
 
     private void finalizeTaskAndLearningState(DailyTask task, KnowledgeNode node, String resultCode, LocalDateTime now) {
-        task.setStatus(TASK_COMPLETED);
+        task.setStatus(TaskStatus.COMPLETED.name());
         task.setUpdatedAt(now);
         dailyTaskMapper.updateById(task);
 
@@ -458,9 +435,9 @@ public class ValidationServiceImpl implements ValidationService {
         }
 
         if (RESULT_ADVANCE.equals(resultCode) || RESULT_REVIEW.equals(resultCode)) {
-            node.setStatus(NODE_PASSED);
+            node.setStatus(NodeStatus.PASSED.name());
         } else {
-            node.setStatus(NODE_NEEDS_RETRY);
+            node.setStatus(NodeStatus.NEEDS_RETRY.name());
         }
         node.setUpdatedAt(now);
         knowledgeNodeMapper.updateById(node);
@@ -483,52 +460,29 @@ public class ValidationServiceImpl implements ValidationService {
         }
 
         if (RESULT_RETRY.equals(resultCode)) {
-            chapter.setStatus(CHAPTER_IN_PROGRESS);
+            chapter.setStatus(ChapterStatus.IN_PROGRESS.name());
             chapter.setUpdatedAt(now);
             learningChapterMapper.updateById(chapter);
 
-            currentStep.setStatus(STEP_IN_PROGRESS);
+            currentStep.setStatus(StepStatus.IN_PROGRESS.name());
             currentStep.setUpdatedAt(now);
             chapterStepMapper.updateById(currentStep);
 
-            node.setStatus(NODE_NEEDS_RETRY);
+            node.setStatus(NodeStatus.NEEDS_RETRY.name());
             node.setUpdatedAt(now);
             return;
         }
 
-        currentStep.setStatus(STEP_COMPLETED);
+        currentStep.setStatus(StepStatus.PASSED.name());
         currentStep.setUpdatedAt(now);
         chapterStepMapper.updateById(currentStep);
 
-        ChapterStep nextStep = chapterStepMapper.selectOne(
-                new LambdaQueryWrapper<ChapterStep>()
-                        .eq(ChapterStep::getChapterId, task.getChapterId())
-                        .eq(ChapterStep::getStatus, "NOT_STARTED")
-                        .orderByAsc(ChapterStep::getStepOrder)
-                        .orderByAsc(ChapterStep::getId)
-                        .last("LIMIT 1")
-        );
-
-        if (nextStep != null) {
-            nextStep.setStatus(STEP_IN_PROGRESS);
-            nextStep.setUpdatedAt(now);
-            chapterStepMapper.updateById(nextStep);
-
-            chapter.setStatus(CHAPTER_IN_PROGRESS);
-            chapter.setUpdatedAt(now);
-            learningChapterMapper.updateById(chapter);
-
-            node.setStatus(NODE_IN_PROGRESS);
-            node.setUpdatedAt(now);
-            return;
-        }
-
-        chapter.setStatus(CHAPTER_COMPLETED);
+        chapter.setStatus(ChapterStatus.COMPLETED.name());
         chapter.setUpdatedAt(now);
         learningChapterMapper.updateById(chapter);
         updateChapterReviewToPending(task.getChapterId(), now);
 
-        node.setStatus(NODE_PASSED);
+        node.setStatus(NodeStatus.PASSED.name());
         node.setUpdatedAt(now);
     }
 
@@ -541,7 +495,7 @@ public class ValidationServiceImpl implements ValidationService {
         if (reviewRecord == null) {
             throw new IllegalArgumentException("chapter review record not found");
         }
-        reviewRecord.setReviewStatus(REVIEW_PENDING);
+        reviewRecord.setReviewStatus(ReviewStatus.PENDING.name());
         reviewRecord.setUpdatedAt(now);
         chapterReviewRecordMapper.updateById(reviewRecord);
     }

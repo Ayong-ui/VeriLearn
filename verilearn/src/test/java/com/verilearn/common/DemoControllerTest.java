@@ -32,7 +32,7 @@ class DemoControllerTest {
         mockMvc.perform(get("/api/demo/error"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(500))
-                .andExpect(jsonPath("$.message").value("demo exception for global handler"))
+                .andExpect(jsonPath("$.message").value("internal server error"))
                 .andExpect(jsonPath("$.data").doesNotExist());
     }
 }

@@ -13,6 +13,7 @@ import com.verilearn.infra.feishu.dto.FeishuEventRequest;
 import com.verilearn.infra.feishu.service.FeishuCommandService;
 import com.verilearn.progress.dto.ProgressResponse;
 import com.verilearn.task.dto.TaskResponse;
+import com.verilearn.validation.dto.ValidationItemResponse;
 import com.verilearn.workflow.dto.LearningRouteContentResponse;
 import com.verilearn.workflow.dto.LearnerCurrentContextResponse;
 import com.verilearn.workflow.dto.LearnerDashboardResponse;
@@ -95,7 +96,7 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
         String text = rawText == null ? "" : rawText.trim();
 
         if (text.isBlank()) {
-            return failure(openId, "", "没有识别到命令内容。请发送 /start、/today、/progress、/dashboard、/submit-demo、/clear、/paths 或 /ai。");
+            return failure(openId, "", "没有识别到命令内容。发送 /help 查看可用命令。");
         }
 
         TopicOptionSelection pendingSelection = pendingTopicSelectionService.get(openId);
@@ -120,10 +121,12 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
             case "/progress" -> handleProgress(openId);
             case "/dashboard" -> handleDashboard(openId);
             case "/submit-demo" -> handleSubmitDemo(openId, argument);
+            case "/review" -> handleReview(openId, argument);
             case "/clear" -> handleClearRouteCommand(openId, argument);
             case "/paths" -> handlePaths(openId);
             case "/ai" -> handleAiCommand(openId, argument);
-            default -> failure(openId, command, "暂不支持这个命令。请使用 /start、/today、/progress、/dashboard、/submit-demo、/clear、/paths 或 /ai。");
+            case "/help" -> handleHelp(openId);
+            default -> failure(openId, command, "暂不支持这个命令。发送 /help 查看可用命令。");
         };
     }
 
@@ -278,17 +281,34 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
         }
     }
 
+    private FeishuCommandResponse handleReview(String openId, String argument) {
+        try {
+            String result = learnerWorkflowService.completeReviews(openId, argument);
+            return success(openId, "/review", result);
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            return failure(openId, "/review", sanitizeWorkflowMessage(exception.getMessage()));
+        }
+    }
+
+    private FeishuCommandResponse handleHelp(String openId) {
+        return success(openId, "/help", """
+                可用命令：
+                /start <主题> — 开始新的学习路线
+                /today — 查看今日任务，完成后可再次发送继续推进
+                /progress — 查看学习进度
+                /dashboard — 查看学习总览
+                /submit-demo — 提交 Demo 完成记录
+                /review — 完成章节复习（可指定章序号如 /review 1）
+                /paths — 查看当前学习文件路径
+                /ai — AI 模型配置（/ai current 查看 /ai switch 切换 /ai config 帮助）
+                /clear <主题> — 清理学习路线
+                /help — 显示本帮助
+                """.trim());
+    }
+
     private FeishuCommandResponse handleClearRouteCommand(String openId, String argument) {
         if (argument == null || argument.isBlank()) {
             return failure(openId, "/clear", "请使用 /clear 主题，例如：/clear MySQL");
-        }
-
-        LearnerDashboardResponse activeDashboard = getActiveDashboardOrNull(openId);
-        if (activeDashboard == null || !"ACTIVE".equalsIgnoreCase(activeDashboard.getGoalStatus())) {
-            return failure(openId, "/clear", "当前没有可清理的进行中学习路线。");
-        }
-        if (!normalize(activeDashboard.getTopic()).equals(normalize(argument))) {
-            return failure(openId, "/clear", "当前进行中的学习路线不是 " + argument + "。");
         }
 
         try {
@@ -485,7 +505,7 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
             int currentChapterNo,
             int totalChapterCount
     ) {
-        int validationItemCount = task.getValidationItems() == null ? 0 : task.getValidationItems().size();
+        String validationSection = buildValidationSection(task);
         return """
                 今日任务：%s
                 学习主题：%s
@@ -502,11 +522,11 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
                 - 先看理论：%s
                 - 再做 Demo：%s
 
-                验证信息：
-                - 本次验证项：%d 个
-
+                %s
                 完成 Demo 后直接发送：
                 /submit-demo 我完成了
+
+                当天完成当前任务后，再次发送 /today 即可继续推进到下一步。
                 """.formatted(
                 defaultText(task.getGoalText(), "今日学习任务"),
                 defaultText(dashboard.getTopic(), "未设置学习主题"),
@@ -519,8 +539,30 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
                 defaultText(toAbsoluteUrl(task.getRouteViewUrl()), "学习路线暂未生成"),
                 defaultText(toAbsoluteUrl(task.getTheoryViewUrl()), "理论文档暂未生成"),
                 defaultText(toAbsoluteUrl(task.getDemoViewUrl()), "Demo 文档暂未生成"),
-                validationItemCount
+                validationSection
         ).trim();
+    }
+
+    private String buildValidationSection(TaskResponse task) {
+        List<ValidationItemResponse> items = task.getValidationItems();
+        if (items == null || items.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("验证问题（阅读理论后请思考）：\n");
+        for (int i = 0; i < items.size(); i++) {
+            ValidationItemResponse item = items.get(i);
+            String tag = switch (item.getItemType()) {
+                case "CONCEPT" -> "概念";
+                case "APPLICATION" -> "应用";
+                case "SUMMARY" -> "总结";
+                case "REFLECTION" -> "反思";
+                case "FOLLOW_UP" -> "追问";
+                default -> item.getItemType();
+            };
+            builder.append("- [").append(tag).append("] ").append(item.getQuestionText()).append("\n");
+        }
+        return builder.toString().trim();
     }
 
     private String buildProgressReply(ProgressResponse progress) {
@@ -657,6 +699,8 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
             case "NOT_STARTED" -> "未开始";
             case "IN_PROGRESS" -> "进行中";
             case "COMPLETED" -> "已完成";
+            case "PASSED" -> "通过";
+            case "FAILED" -> "未通过";
             case "PENDING" -> "待开始";
             case "PENDING_REVIEW" -> "待复习";
             default -> status;
@@ -665,12 +709,11 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
 
     private String toReadableStepType(String stepType) {
         if (stepType == null || stepType.isBlank()) {
-            return "先看理论";
+            return "完成 Demo";
         }
         return switch (stepType) {
-            case "READ_THEORY" -> "先看理论";
-            case "RUN_DEMO" -> "再做 Demo";
-            case "SUBMIT_DEMO", "SUBMIT_VALIDATION" -> "提交结果";
+            case "RUN_DEMO" -> "完成 Demo";
+            case "READ_THEORY" -> "阅读理论";
             case "REVIEW_SUMMARY" -> "查看评估";
             default -> stepType;
         };
@@ -733,7 +776,7 @@ public class FeishuCommandServiceImpl implements FeishuCommandService {
             return "操作失败，请稍后重试。";
         }
         if (message.contains("current demo step not found")) {
-            return "当前还没有进入 Demo 步骤，请先按今日任务完成前置学习。";
+            return "当前没有进行中的 Demo 任务，请发送 /today 获取今日学习任务。";
         }
         if (message.contains("knowledge node not found")) {
             return "旧任务数据已失效，请重新发送 /today 生成新的学习任务。";

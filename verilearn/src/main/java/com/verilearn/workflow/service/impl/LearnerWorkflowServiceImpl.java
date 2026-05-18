@@ -15,8 +15,10 @@ import com.verilearn.chapter.mapper.ChapterMaterialMapper;
 import com.verilearn.chapter.mapper.ChapterReviewRecordMapper;
 import com.verilearn.chapter.mapper.ChapterStepMapper;
 import com.verilearn.chapter.mapper.LearningChapterMapper;
+import com.verilearn.chapter.model.StepType;
 import com.verilearn.chapter.service.ChapterService;
 import com.verilearn.goal.dto.GoalResponse;
+import com.verilearn.goal.model.GoalStatus;
 import com.verilearn.goal.dto.GoalUpsertRequest;
 import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
@@ -66,14 +68,17 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
 
     private static final Logger log = LoggerFactory.getLogger(LearnerWorkflowServiceImpl.class);
 
-    private static final String GOAL_ACTIVE = "ACTIVE";
-    private static final String GOAL_COMPLETED = "COMPLETED";
     private static final String DEFAULT_TARGET_LEVEL = "intern";
     private static final Integer DEFAULT_DAILY_MINUTES = 120;
     private static final String ROUTE_CONTENT_URL_TEMPLATE = "/api/learners/%s/learning-route";
@@ -352,13 +357,7 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
                         .eq(LearningChapter::getGoalId, goal.getId())
         );
         List<Long> chapterIds = chapters.stream().map(LearningChapter::getId).toList();
-        List<Long> taskIds = dailyTaskMapper.selectList(
-                        new LambdaQueryWrapper<DailyTask>()
-                                .eq(DailyTask::getUserId, goal.getUserId())
-                ).stream()
-                .filter(task -> belongsToGoal(task, goal.getId()))
-                .map(DailyTask::getId)
-                .toList();
+        List<Long> taskIds = filterTaskIdsByGoal(goal.getId(), goal.getUserId());
 
         if (!taskIds.isEmpty()) {
             validationSubmissionMapper.delete(new LambdaQueryWrapper<ValidationSubmission>().in(ValidationSubmission::getTaskId, taskIds));
@@ -376,7 +375,11 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
 
         knowledgeNodeMapper.delete(new LambdaQueryWrapper<KnowledgeNode>().eq(KnowledgeNode::getGoalId, goal.getId()));
         learningGoalMapper.deleteById(goal.getId());
-        learningRouteService.deleteRouteDirectory(goal.getTopic());
+        try {
+            learningRouteService.deleteRouteDirectory(goal.getTopic());
+        } catch (RuntimeException exception) {
+            log.warn("failed to delete learning route directory after clearing route: topic={}", goal.getTopic(), exception);
+        }
     }
 
     @Override
@@ -409,9 +412,12 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
         ensureChapterBelongsToGoal(goal.getId(), chapterId);
         ChapterDetailResponse chapterDetail = chapterService.getChapterDetail(chapterId);
+        if (chapterDetail.getSteps() == null) {
+            throw new IllegalArgumentException("current demo step not found");
+        }
         Long currentDemoStepId = chapterDetail.getSteps().stream()
-                .filter(step -> "RUN_DEMO".equals(step.getStepType()))
-                .filter(step -> "IN_PROGRESS".equals(step.getStatus()))
+                .filter(step -> StepType.RUN_DEMO.name().equals(step.getStepType()))
+                .filter(step -> "IN_PROGRESS".equals(step.getStatus()) || "FAILED".equals(step.getStatus()))
                 .map(step -> step.getId())
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("current demo step not found"));
@@ -506,7 +512,7 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         LearningGoal goal = learningGoalMapper.selectOne(
                 new LambdaQueryWrapper<LearningGoal>()
                         .eq(LearningGoal::getUserId, learnerUser.getId())
-                        .eq(LearningGoal::getStatus, GOAL_ACTIVE)
+                        .eq(LearningGoal::getStatus, GoalStatus.ACTIVE.name())
                         .orderByDesc(LearningGoal::getId)
                         .last("LIMIT 1")
         );
@@ -514,7 +520,11 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
             return null;
         }
         refreshGoalStatusIfCompleted(goal.getId());
-        return learningGoalMapper.selectById(goal.getId());
+        LearningGoal refreshed = learningGoalMapper.selectById(goal.getId());
+        if (refreshed == null || !GoalStatus.ACTIVE.name().equals(refreshed.getStatus())) {
+            return null;
+        }
+        return refreshed;
     }
 
     private void ensureNoBlockingActiveGoal(String feishuOpenId) {
@@ -522,7 +532,7 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
         if (activeGoal == null) {
             return;
         }
-        if (!GOAL_ACTIVE.equals(activeGoal.getStatus())) {
+        if (!GoalStatus.ACTIVE.name().equals(activeGoal.getStatus())) {
             return;
         }
 
@@ -674,6 +684,9 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
 
     private boolean hasCoreMaterials(Long chapterId) {
         ChapterDetailResponse chapterDetail = chapterService.getChapterDetail(chapterId);
+        if (chapterDetail.getMaterials() == null) {
+            return false;
+        }
         boolean hasTheory = chapterDetail.getMaterials().stream()
                 .anyMatch(material -> "THEORY_DOC".equals(material.getMaterialType())
                         && material.getFilePath() != null
@@ -687,29 +700,51 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
 
     private void refreshGoalStatusIfCompleted(Long goalId) {
         LearningGoal goal = learningGoalMapper.selectById(goalId);
-        if (goal == null || !GOAL_ACTIVE.equals(goal.getStatus())) {
+        if (goal == null || !GoalStatus.ACTIVE.name().equals(goal.getStatus())) {
             return;
         }
         List<ChapterSummaryResponse> chapters = chapterService.listChaptersByGoalId(goalId);
         if (!chapters.isEmpty() && chapters.stream().allMatch(chapter -> "COMPLETED".equals(chapter.getStatus()))) {
-            goal.setStatus(GOAL_COMPLETED);
+            goal.setStatus(GoalStatus.COMPLETED.name());
             goal.setUpdatedAt(LocalDateTime.now());
             learningGoalMapper.updateById(goal);
         }
     }
 
-    private boolean belongsToGoal(DailyTask task, Long goalId) {
-        if (task.getNodeId() != null) {
-            KnowledgeNode node = knowledgeNodeMapper.selectById(task.getNodeId());
-            if (node != null) {
-                return goalId.equals(node.getGoalId());
-            }
+    private List<Long> filterTaskIdsByGoal(Long goalId, Long userId) {
+        List<DailyTask> tasks = dailyTaskMapper.selectList(
+                new LambdaQueryWrapper<DailyTask>()
+                        .eq(DailyTask::getUserId, userId)
+        );
+        if (tasks.isEmpty()) {
+            return List.of();
         }
-        if (task.getChapterId() != null) {
-            LearningChapter chapter = learningChapterMapper.selectById(task.getChapterId());
-            return chapter != null && goalId.equals(chapter.getGoalId());
-        }
-        return false;
+
+        Set<Long> nodeIds = tasks.stream()
+                .map(DailyTask::getNodeId).filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Long> chapterIds = tasks.stream()
+                .map(DailyTask::getChapterId).filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        Map<Long, KnowledgeNode> nodeMap = nodeIds.isEmpty() ? Map.of()
+                : knowledgeNodeMapper.selectBatchIds(nodeIds).stream()
+                        .collect(Collectors.toMap(KnowledgeNode::getId, Function.identity()));
+        Map<Long, LearningChapter> chapterMap = chapterIds.isEmpty() ? Map.of()
+                : learningChapterMapper.selectBatchIds(chapterIds).stream()
+                        .collect(Collectors.toMap(LearningChapter::getId, Function.identity()));
+
+        return tasks.stream()
+                .filter(task -> {
+                    KnowledgeNode node = task.getNodeId() == null ? null : nodeMap.get(task.getNodeId());
+                    if (node != null && goalId.equals(node.getGoalId())) {
+                        return true;
+                    }
+                    LearningChapter chapter = task.getChapterId() == null ? null : chapterMap.get(task.getChapterId());
+                    return chapter != null && goalId.equals(chapter.getGoalId());
+                })
+                .map(DailyTask::getId)
+                .toList();
     }
 
     private String normalizeTopic(String topic) {
@@ -747,6 +782,41 @@ public class LearnerWorkflowServiceImpl implements LearnerWorkflowService {
             }
         }
         return task;
+    }
+
+    @Override
+    @Transactional
+    public String completeReviews(String feishuOpenId, String chapterNoText) {
+        LearningGoal goal = getActiveGoalByOpenId(feishuOpenId);
+        List<ChapterSummaryResponse> pendingReviews = chapterService.listPendingReviewsByGoalId(goal.getId());
+        if (pendingReviews.isEmpty()) {
+            return "当前没有待复习的章节。";
+        }
+
+        Integer targetChapterNo = null;
+        if (chapterNoText != null && !chapterNoText.isBlank()) {
+            try {
+                targetChapterNo = Integer.parseInt(chapterNoText.trim());
+            } catch (NumberFormatException exception) {
+                return "章序号必须是数字，例如：/review 1";
+            }
+        }
+
+        int completedCount = 0;
+        StringBuilder reviewedTitles = new StringBuilder();
+        for (ChapterSummaryResponse chapter : pendingReviews) {
+            if (targetChapterNo != null && !targetChapterNo.equals(chapter.getChapterNo())) {
+                continue;
+            }
+            chapterService.completeReview(chapter.getChapterId());
+            reviewedTitles.append("  - 第 ").append(chapter.getChapterNo()).append(" 章 ").append(chapter.getTitle()).append("\n");
+            completedCount++;
+        }
+
+        if (completedCount == 0) {
+            return "未找到章序号为 " + targetChapterNo + " 的待复习章节。";
+        }
+        return "已完成 " + completedCount + " 个章节的复习：\n" + reviewedTitles;
     }
 
     private String escapeHtml(String value) {

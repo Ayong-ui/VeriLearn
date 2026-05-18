@@ -38,7 +38,7 @@ public class LearnerWorkflowController {
         return ApiResponse.success("learner setup completed successfully", learnerWorkflowService.setupLearner(request));
     }
 
-    @GetMapping("/{feishuOpenId}/today-task")
+    @PostMapping("/{feishuOpenId}/today-task")
     public ApiResponse<TaskResponse> generateTodayTask(@PathVariable String feishuOpenId) {
         return ApiResponse.success("today task generated successfully", learnerWorkflowService.generateTodayTask(feishuOpenId));
     }

@@ -47,7 +47,7 @@ class FeishuCardControllerTest {
         task.setTaskId(1001L);
         task.setGoalText("学习 Spring Boot fundamentals");
         task.setChapterTitle("Spring Boot fundamentals");
-        task.setStepType("READ_THEORY");
+        task.setStepType("RUN_DEMO");
         task.setStatus("PENDING");
         task.setTheoryFilePath("spring-boot/01-spring-boot-fundamentals/user/theory/theory.md");
         task.setTheoryContentUrl("/api/materials/101/content");

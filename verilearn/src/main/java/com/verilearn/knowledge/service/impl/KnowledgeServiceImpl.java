@@ -9,6 +9,7 @@ import com.verilearn.knowledge.dto.KnowledgeNodeDraftRequest;
 import com.verilearn.knowledge.dto.KnowledgeNodeResponse;
 import com.verilearn.knowledge.entity.KnowledgeNode;
 import com.verilearn.knowledge.mapper.KnowledgeNodeMapper;
+import com.verilearn.knowledge.model.NodeStatus;
 import com.verilearn.knowledge.service.KnowledgeService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +22,6 @@ import java.util.List;
 public class KnowledgeServiceImpl implements KnowledgeService {
 
     private static final String DRAFT_STATUS = "DRAFT";
-    private static final String NOT_STARTED_STATUS = "NOT_STARTED";
 
     private final LearningGoalMapper learningGoalMapper;
     private final KnowledgeNodeMapper knowledgeNodeMapper;
@@ -73,7 +73,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         LocalDateTime now = LocalDateTime.now();
         for (KnowledgeNode node : nodes) {
             if (DRAFT_STATUS.equals(node.getStatus())) {
-                node.setStatus(NOT_STARTED_STATUS);
+                node.setStatus(NodeStatus.NOT_STARTED.name());
                 node.setUpdatedAt(now);
                 knowledgeNodeMapper.updateById(node);
                 initializedCount++;
@@ -83,7 +83,7 @@ public class KnowledgeServiceImpl implements KnowledgeService {
         KnowledgeNodeConfirmResponse response = new KnowledgeNodeConfirmResponse();
         response.setGoalId(goalId);
         response.setInitializedCount(initializedCount);
-        response.setStatus(NOT_STARTED_STATUS);
+        response.setStatus(NodeStatus.NOT_STARTED.name());
         return response;
     }
 

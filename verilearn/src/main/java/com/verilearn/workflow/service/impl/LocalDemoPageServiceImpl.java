@@ -340,7 +340,7 @@ public class PingController {
                         setAiConfigLink();
                         const encodedOpenId = encodeURIComponent(openId());
                         const [todayTask, currentContext, dashboard] = await Promise.all([
-                            fetch(`/api/learners/${encodedOpenId}/today-task`).then(readApi),
+                            fetch(`/api/learners/${encodedOpenId}/today-task`, {method: 'POST'}).then(readApi),
                             fetch(`/api/learners/${encodedOpenId}/current-context`).then(readApi),
                             fetch(`/api/learners/${encodedOpenId}/dashboard`).then(readApi)
                         ]);

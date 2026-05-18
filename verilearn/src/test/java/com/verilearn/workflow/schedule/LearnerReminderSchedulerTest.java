@@ -111,35 +111,13 @@ class LearnerReminderSchedulerTest {
                                 """))
                 .andExpect(status().isOk());
 
-        String taskResponse = mockMvc.perform(get("/api/learners/{feishuOpenId}/today-task", openId))
+        String taskResponse = mockMvc.perform(post("/api/learners/{feishuOpenId}/today-task", openId))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
         Long taskId = com.verilearn.chapter.JsonPathHelper.readLong(taskResponse, "$.data.taskId");
-        Long firstItemId = com.verilearn.chapter.JsonPathHelper.readLong(taskResponse, "$.data.validationItems[0].itemId");
-        Long secondItemId = com.verilearn.chapter.JsonPathHelper.readLong(taskResponse, "$.data.validationItems[1].itemId");
-
-        mockMvc.perform(post("/api/tasks/{taskId}/submit", taskId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "submissions": [
-                                    {
-                                      "itemId": %d,
-                                      "submittedAnswer": "understood",
-                                      "correct": true
-                                    },
-                                    {
-                                      "itemId": %d,
-                                      "submittedAnswer": "working example",
-                                      "correct": true
-                                    }
-                                  ]
-                                }
-                                """.formatted(firstItemId, secondItemId)))
-                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/learners/{feishuOpenId}/demo-feedback/current", openId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -156,7 +134,7 @@ class LearnerReminderSchedulerTest {
 
         verify(feishuMessagingService).sendTextMessage(
                 ArgumentMatchers.eq(openId),
-                ArgumentMatchers.contains("/dashboard")
+                ArgumentMatchers.contains("/review")
         );
     }
 
@@ -195,7 +173,7 @@ class LearnerReminderSchedulerTest {
 
         verify(feishuMessagingService, org.mockito.Mockito.never()).sendTextMessage(
                 ArgumentMatchers.eq(openId),
-                ArgumentMatchers.contains("/dashboard")
+                ArgumentMatchers.contains("/review")
         );
         org.junit.jupiter.api.Assertions.assertNotNull(goal);
     }
@@ -205,7 +183,7 @@ class LearnerReminderSchedulerTest {
         result.setUnderstandingLevel("HIGH");
         result.setEvaluationMarkdown("# Demo evaluation\nYou completed the exercise well.");
         result.setNextStepMarkdown("# Next step\nMove on to review.");
-        result.setShouldReview(true);
+        result.setShouldReview(false);
         result.setProvider("mock");
         return result;
     }

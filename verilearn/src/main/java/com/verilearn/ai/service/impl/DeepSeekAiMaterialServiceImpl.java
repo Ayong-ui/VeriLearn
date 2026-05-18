@@ -4,6 +4,8 @@ import com.verilearn.ai.dto.AiChapterMaterialResult;
 import com.verilearn.ai.exception.AiGenerationException;
 import com.verilearn.ai.service.AiMaterialService;
 import com.verilearn.ai.service.AiRoutingService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
@@ -14,7 +16,11 @@ import java.util.Set;
 @Service
 public class DeepSeekAiMaterialServiceImpl implements AiMaterialService {
 
+    private static final Logger log = LoggerFactory.getLogger(DeepSeekAiMaterialServiceImpl.class);
+
     private static final String PROVIDER = "deepseek";
+    private static final double TEMPERATURE = 0.7;
+
     private static final Set<String> STOP_WORDS = Set.of(
             "核心", "概念", "基础", "入门", "练习", "综合", "应用",
             "fundamentals", "basics", "example", "examples", "demo", "guide",
@@ -23,6 +29,20 @@ public class DeepSeekAiMaterialServiceImpl implements AiMaterialService {
     private static final Set<String> BAD_PATTERNS = Set.of(
             "faq", "常见问题", "markdown 简明指南", "200个常见问题", "请查收为您生成"
     );
+
+    private static final String SYSTEM_PROMPT = """
+            你是一位资深的中文技术课程设计师，专门为自学者编写高质量、结构化的学习材料。
+
+            你的写作标准：
+            1. 每个概念都附带一个最小可运行的代码示例或具体操作步骤，避免纯理论堆砌。
+            2. 内容按「是什么 → 为什么 → 怎么用」的逻辑组织，层层递进。
+            3. 用具体的场景和案例说明抽象概念，让读者读完就能动手实践。
+            4. 语言简洁但信息密度高，适合有基本编程基础的学习者。
+            5. 避免空泛的模板句式（如「本章主要介绍……」「通过学习本章你将掌握……」），直接进入正题。
+            6. 对于常见误区，给出错误示例和正确示例的对比。
+            7. 所有输出使用中文 Markdown，代码注释也用中文。
+            8. 聚焦在当前章节范围内，不要扩展到无关主题。
+            """;
 
     private final AiRoutingService aiRoutingService;
 
@@ -39,8 +59,9 @@ public class DeepSeekAiMaterialServiceImpl implements AiMaterialService {
     ) {
         String content = aiRoutingService.chatForUser(
                 userId,
-                "You generate concise Chinese self-study materials for one clearly scoped learning topic.",
-                buildPrompt(topic, chapterTitle, currentStepType)
+                SYSTEM_PROMPT,
+                buildPrompt(topic, chapterTitle, currentStepType),
+                TEMPERATURE
         );
         if (content == null || content.isBlank()) {
             throw new AiGenerationException("学习材料生成失败，请稍后重试或检查 AI 配置。");
@@ -50,35 +71,31 @@ public class DeepSeekAiMaterialServiceImpl implements AiMaterialService {
 
     private String buildPrompt(String topic, String chapterTitle, String currentStepType) {
         return """
-                你要为“明确且具体”的学习主题生成中文自学材料。
-                Topic: %s
-                Chapter: %s
-                Current step: %s
+                请为以下学习主题和章节生成自学材料。
 
-                Hard requirements:
-                1. Topic 和 Chapter 必须强相关，不能偷换成其他学科或其他技术主题。
-                2. 不要输出 FAQ、教程总览、学习建议汇总。
-                3. 输出内容必须适合作为 theory.md 和 demo-task.md。
-                4. Demo 必须是 Markdown 任务单，不要生成额外源代码文件。
+                学习主题：%s
+                当前章节：%s
+                当前步骤：%s
 
-                Output format:
+                输出格式（严格按以下三个部分输出）：
+
                 [SUMMARY]
-                用中文写一段 80 字以内的摘要。
+                用 80 字以内概括本章要讲什么、学完能做什么。
 
                 [THEORY]
-                用中文覆盖：
-                1. 这个知识点是什么
-                2. 它适用于什么场景
-                3. 一个最小示例或最小步骤
-                4. 为什么这样设计 / 工作原理
-                5. 一个常见误区
+                覆盖以下内容（每部分用小标题）：
+                1. 这个知识点解决什么问题（场景引入）
+                2. 核心概念和原理（用类比或图解思维描述）
+                3. 最小可用示例（代码或具体步骤）
+                4. 工作原理简述
+                5. 常见误区和正确做法对比
 
                 [DEMO]
-                用中文提供 Markdown 任务单：
-                1. 练习目标
-                2. 练习步骤
-                3. 预期结果
-                4. 学完后需要回答的问题
+                一份 Markdown 任务单：
+                1. 练习目标（一句话说清要达成什么）
+                2. 练习步骤（具体的、可直接执行的操作）
+                3. 预期结果（做完后应该看到什么）
+                4. 学完后需要回答的问题（2-3 个理解检查题）
                 """.formatted(
                 defaultText(topic),
                 defaultText(chapterTitle),
@@ -99,8 +116,12 @@ public class DeepSeekAiMaterialServiceImpl implements AiMaterialService {
         if (summary == null || summary.isBlank() || theory == null || theory.isBlank() || demo == null || demo.isBlank()) {
             throw new AiGenerationException("学习材料生成结果缺少必要结构，请稍后重试。");
         }
-        if (!isUsableMaterialContent(summary, theory, demo, topic, chapterTitle)) {
+        if (hasBadPatterns(summary, theory, demo)) {
+            log.warn("ai generated material contains bad patterns, retrying: topic={}, chapter={}", topic, chapterTitle);
             throw new AiGenerationException("学习材料生成结果不符合要求，系统已拒绝写入。");
+        }
+        if (!isOnTopic(summary, theory, demo, topic, chapterTitle)) {
+            log.warn("ai generated material appears off-topic, accepting with warning: topic={}, chapter={}", topic, chapterTitle);
         }
 
         AiChapterMaterialResult result = new AiChapterMaterialResult();
@@ -125,14 +146,18 @@ public class DeepSeekAiMaterialServiceImpl implements AiMaterialService {
         return content.substring(startIndex, endIndex).trim();
     }
 
-    private boolean isUsableMaterialContent(String summary, String theory, String demo, String topic, String chapterTitle) {
+    private boolean hasBadPatterns(String summary, String theory, String demo) {
         String combined = (summary + "\n" + theory + "\n" + demo).toLowerCase(Locale.ROOT);
         for (String badPattern : BAD_PATTERNS) {
             if (combined.contains(badPattern)) {
-                return false;
+                return true;
             }
         }
+        return false;
+    }
 
+    private boolean isOnTopic(String summary, String theory, String demo, String topic, String chapterTitle) {
+        String combined = (summary + "\n" + theory + "\n" + demo).toLowerCase(Locale.ROOT);
         Set<String> keywords = buildKeywords(topic, chapterTitle);
         if (keywords.isEmpty()) {
             return true;

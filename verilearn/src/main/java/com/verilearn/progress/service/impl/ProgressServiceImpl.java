@@ -7,6 +7,7 @@ import com.verilearn.chapter.mapper.ChapterReviewRecordMapper;
 import com.verilearn.chapter.mapper.LearningChapterMapper;
 import com.verilearn.goal.entity.LearningGoal;
 import com.verilearn.goal.mapper.LearningGoalMapper;
+import com.verilearn.goal.model.GoalStatus;
 import com.verilearn.knowledge.entity.KnowledgeNode;
 import com.verilearn.knowledge.mapper.KnowledgeNodeMapper;
 import com.verilearn.progress.dto.ProgressResponse;
@@ -23,8 +24,6 @@ import java.util.Map;
 
 @Service
 public class ProgressServiceImpl implements ProgressService {
-
-    private static final String GOAL_ACTIVE = "ACTIVE";
 
     private final LearningGoalMapper learningGoalMapper;
     private final KnowledgeNodeMapper knowledgeNodeMapper;
@@ -51,7 +50,7 @@ public class ProgressServiceImpl implements ProgressService {
         LearningGoal goal = learningGoalMapper.selectOne(
                 new LambdaQueryWrapper<LearningGoal>()
                         .eq(LearningGoal::getUserId, userId)
-                        .eq(LearningGoal::getStatus, GOAL_ACTIVE)
+                        .eq(LearningGoal::getStatus, GoalStatus.ACTIVE.name())
                         .orderByDesc(LearningGoal::getId)
                         .last("LIMIT 1")
         );

@@ -11,6 +11,18 @@ import java.util.List;
 @Service
 public class DeepSeekAiValidationServiceImpl implements AiValidationService {
 
+    private static final double TEMPERATURE = 0.5;
+
+    private static final String SYSTEM_PROMPT = """
+            你是一位中文技术自学的考核设计者，专门为学习章节生成简短的验证题目。
+
+            你的出题原则：
+            1. 题目必须紧贴当前章节的知识点，考察理解而非记忆。
+            2. 每道题要求学习者用自己的话解释或举例，而不是选择/填空。
+            3. 题目语言清晰直接，不使用「请简述」「请说明」等冗余开头。
+            4. 答案要点给出核心判断标准，不是标准答案。
+            """;
+
     private final AiRoutingService aiRoutingService;
 
     public DeepSeekAiValidationServiceImpl(AiRoutingService aiRoutingService) {
@@ -21,8 +33,9 @@ public class DeepSeekAiValidationServiceImpl implements AiValidationService {
     public List<AiValidationItemDraft> generateValidationItems(Long userId, String topic, String chapterTitle, String nodeName, String stepType) {
         String content = aiRoutingService.chatForUser(
                 userId,
-                "You generate concise validation items for Java backend self-learning.",
-                buildPrompt(topic, chapterTitle, nodeName, stepType)
+                SYSTEM_PROMPT,
+                buildPrompt(topic, chapterTitle, nodeName, stepType),
+                TEMPERATURE
         );
         if (content == null || content.isBlank()) {
             return fallback(nodeName, stepType);
@@ -34,24 +47,26 @@ public class DeepSeekAiValidationServiceImpl implements AiValidationService {
 
     private String buildPrompt(String topic, String chapterTitle, String nodeName, String stepType) {
         return """
-                Generate 2 short Chinese validation items for a Java backend self-study chapter.
-                Topic: %s
-                Chapter: %s
-                Knowledge point: %s
-                Step type: %s
+                为以下自学章节生成 2 个中文验证题目。
 
-                Output format:
-                [ITEM]
-                type=item type
-                difficulty=difficulty
-                question=question text
-                answer=answer key
+                学习主题：%s
+                章节：%s
+                知识点：%s
+                学习步骤类型：%s
+
+                输出格式（严格按照以下模板，每个题目以 [ITEM] 开头）：
 
                 [ITEM]
-                type=item type
-                difficulty=difficulty
-                question=question text
-                answer=answer key
+                type=题目类型
+                difficulty=难度
+                question=题目文字（要求用自己的话解释或举例）
+                answer=判断要点（列出回答应该覆盖的关键点）
+
+                [ITEM]
+                type=题目类型
+                difficulty=难度
+                question=题目文字
+                answer=判断要点
                 """.formatted(
                 topic,
                 chapterTitle,

@@ -122,11 +122,8 @@ class LearnerWorkflowServiceImplTest {
         assertNotNull(mysqlTask);
         assertNotNull(mysqlTask.getTaskId());
 
-        Long validationItemCountBeforeClear = validationItemMapper.selectCount(
-                new LambdaQueryWrapper<ValidationItem>()
-                        .eq(ValidationItem::getTaskId, mysqlTask.getTaskId())
-        );
-        assertTrue(validationItemCountBeforeClear > 0);
+        assertEquals("RUN_DEMO", mysqlTask.getStepType());
+        assertEquals("PENDING", mysqlTask.getStatus());
 
         String mysqlRouteAbsolutePath = learningRouteService.resolveAbsolutePath(
                 learningRouteService.buildRouteRelativePath(MYSQL_TOPIC)

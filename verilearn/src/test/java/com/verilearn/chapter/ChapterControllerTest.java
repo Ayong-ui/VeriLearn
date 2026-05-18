@@ -97,15 +97,13 @@ class ChapterControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.materials.length()").value(2))
                 .andExpect(jsonPath("$.data.materials[0].filePath").value(org.hamcrest.Matchers.endsWith(".md")))
-                .andExpect(jsonPath("$.data.steps.length()").value(3))
+                .andExpect(jsonPath("$.data.steps.length()").value(1))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
         Long firstMaterialId = JsonPathHelper.readLong(chapterDetail, "$.data.materials[0].id");
         Long firstStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[0].id");
-        Long secondStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[1].id");
-        Long thirdStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[2].id");
 
         mockMvc.perform(get("/api/materials/{materialId}/content", firstMaterialId))
                 .andExpect(status().isOk())
@@ -117,21 +115,7 @@ class ChapterControllerTest {
         mockMvc.perform(get("/materials/{materialId}/view", firstMaterialId))
                 .andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(org.hamcrest.Matchers.containsString("/api/materials/" + firstMaterialId + "/content")))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(org.hamcrest.Matchers.containsString("theory.md")));
-
-        mockMvc.perform(post("/api/chapters/{chapterId}/steps/submit", chapter.getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "stepId": %d,
-                                  "feedbackNote": "Theory understood.",
-                                  "needsReview": false
-                                }
-                                """.formatted(firstStepId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.nextStepId").value(secondStepId))
-                .andExpect(jsonPath("$.data.nextStepType").value("RUN_DEMO"));
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(org.hamcrest.Matchers.containsString("/api/materials/" + firstMaterialId + "/content")));
 
         mockMvc.perform(post("/api/chapters/{chapterId}/steps/submit", chapter.getId())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -141,20 +125,7 @@ class ChapterControllerTest {
                                   "feedbackNote": "Demo completed but review would help.",
                                   "needsReview": true
                                 }
-                                """.formatted(secondStepId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.nextStepId").value(thirdStepId))
-                .andExpect(jsonPath("$.data.reviewStatus").value("PENDING"));
-
-        mockMvc.perform(post("/api/chapters/{chapterId}/steps/submit", chapter.getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "stepId": %d,
-                                  "feedbackNote": "Chapter completed.",
-                                  "needsReview": false
-                                }
-                                """.formatted(thirdStepId)))
+                                """.formatted(firstStepId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.chapterStatus").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.reviewStatus").value("PENDING"));
@@ -227,21 +198,7 @@ class ChapterControllerTest {
                 .getResponse()
                 .getContentAsString();
 
-        Long firstStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[0].id");
-        Long secondStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[1].id");
-
-        mockMvc.perform(post("/api/chapters/{chapterId}/steps/submit", chapter.getId())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "stepId": %d,
-                                  "feedbackNote": "Theory understood.",
-                                  "needsReview": false
-                                }
-                                """.formatted(firstStepId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.nextStepId").value(secondStepId))
-                .andExpect(jsonPath("$.data.nextStepType").value("RUN_DEMO"));
+        Long demoStepId = JsonPathHelper.readLong(chapterDetail, "$.data.steps[0].id");
 
         mockMvc.perform(post("/api/chapters/{chapterId}/demo-evaluations", chapter.getId())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -252,18 +209,17 @@ class ChapterControllerTest {
                                   "codeSnippet": "@RestController public class DemoController {}",
                                   "question": "Why is @RestController better here?"
                                 }
-                                """.formatted(secondStepId)))
+                                """.formatted(demoStepId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.chapterId").value(chapter.getId()))
-                .andExpect(jsonPath("$.data.completedStepId").value(secondStepId))
+                .andExpect(jsonPath("$.data.completedStepId").value(demoStepId))
                 .andExpect(jsonPath("$.data.understandingLevel").value("HIGH"))
                 .andExpect(jsonPath("$.data.evaluationFilePath").value(org.hamcrest.Matchers.endsWith("evaluation-report.md")))
                 .andExpect(jsonPath("$.data.evaluationViewUrl").value(org.hamcrest.Matchers.endsWith("/view")))
                 .andExpect(jsonPath("$.data.nextStepFilePath").value(org.hamcrest.Matchers.endsWith("next-step.md")))
                 .andExpect(jsonPath("$.data.nextStepViewUrl").value(org.hamcrest.Matchers.endsWith("/view")))
-                .andExpect(jsonPath("$.data.nextStepType").value("SUBMIT_FEEDBACK"))
-                .andExpect(jsonPath("$.data.chapterStatus").value("IN_PROGRESS"));
+                .andExpect(jsonPath("$.data.chapterStatus").value("COMPLETED"));
     }
 
     private Long createGoalWithNodes() {
